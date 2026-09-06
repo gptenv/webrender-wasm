@@ -1773,7 +1773,6 @@ impl<'a> SceneBuilder<'a> {
         PrimitiveInstance::new(
             instance_kind,
             clip_leaf_id,
-            info.rect,
         )
     }
 
@@ -3949,7 +3948,6 @@ fn create_prim_instance(
         clip_tree_builder.build_for_picture(
             clip_node_id,
         ),
-        LayoutRect::zero(),
     )
 }
 
