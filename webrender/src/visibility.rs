@@ -310,14 +310,14 @@ pub fn update_prim_visibility(
 
     let mut map_local_to_picture = surface.map_local_to_picture.clone();
 
+    let visibility_spatial_node_index = surface.visibility_spatial_node_index;
+
     let map_surface_to_vis = SpaceMapper::new_with_target(
-        // TODO: switch from root to raster space.
-        frame_context.root_spatial_node_index,
+        visibility_spatial_node_index,
         surface.surface_spatial_node_index,
         surface.culling_rect,
         frame_context.spatial_tree,
     );
-    let visibility_spatial_node_index = surface.visibility_spatial_node_index;
 
     // Snappers into this surface's raster space (the space its content is
     // rasterized in), reused across all clusters/prims in this surface (and a
