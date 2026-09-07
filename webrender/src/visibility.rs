@@ -312,6 +312,12 @@ pub fn update_prim_visibility(
 
     let visibility_spatial_node_index = surface.visibility_spatial_node_index;
 
+    if surface_culling_rect == VisRect::max_rect() {
+        // `SurfaceInfo::new` could not project the screen into vis space, so this
+        // surface culls nothing at all.
+        frame_state.profile.add(profiler::VIS_CULLING_RECT_FALLBACKS, 1);
+    }
+
     let map_surface_to_vis = SpaceMapper::new_with_target(
         visibility_spatial_node_index,
         surface.surface_spatial_node_index,

@@ -325,6 +325,23 @@ impl SurfaceInfo {
             }
         };
 
+        // The culling rect has to describe the same region as the screen rect it
+        // was derived from, so mapping it back must still cover the screen. A vis
+        // space that lost part of the screen on the way in would cull content
+        // that is genuinely visible - the failure mode that matters when the vis
+        // node moves away from the root.
+        #[cfg(debug_assertions)]
+        if let Some(round_trip) = map_vis_to_root.map(&culling_rect) {
+            const EPSILON: f32 = 0.05;
+            debug_assert!(
+                round_trip.inflate(EPSILON, EPSILON).contains_box(&global_culling_rect),
+                "vis culling rect {:?} loses part of the screen {:?} (round trip {:?})",
+                culling_rect,
+                global_culling_rect,
+                round_trip,
+            );
+        }
+
         SurfaceInfo {
             unclipped_local_rect: PictureRect::zero(),
             clipped_local_rect: PictureRect::zero(),
