@@ -216,6 +216,10 @@ pub struct SurfaceInfo {
     /// rect culls the whole surface, so any projection that cannot be computed
     /// falls back to `max_rect` (cull nothing) instead.
     pub culling_rect: VisRect,
+    /// Whether `culling_rect` is the `max_rect` fallback rather than a real
+    /// projection of the screen. Instrumentation only: a `max_rect` culling rect
+    /// is also legitimate for a surface handed an unbounded screen rect.
+    pub culling_rect_projection_failed: bool,
     /// Helper structs for mapping local rects in different
     /// coordinate systems into the picture coordinates.
     pub map_local_to_picture: SpaceMapper<LayoutPixel, PicturePixel>,
@@ -307,9 +311,11 @@ impl SurfaceInfo {
             spatial_tree,
         );
 
+        let mut culling_rect_projection_failed = false;
         let culling_rect = match map_vis_to_root.unmap(&global_culling_rect) {
             Some(rect) => rect,
             None => {
+                culling_rect_projection_failed = true;
                 // Cull nothing rather than everything; see `culling_rect`.
                 // Only reachable for a vis node outside the root coordinate
                 // system, where the screen rect need not have an axis-aligned
@@ -359,6 +365,7 @@ impl SurfaceInfo {
             force_scissor_rect,
             svgfe_source_map: ScaleOffset::identity(),
             culling_rect,
+            culling_rect_projection_failed,
         }
     }
 

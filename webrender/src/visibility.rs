@@ -312,9 +312,7 @@ pub fn update_prim_visibility(
 
     let visibility_spatial_node_index = surface.visibility_spatial_node_index;
 
-    if surface_culling_rect == VisRect::max_rect() {
-        // `SurfaceInfo::new` could not project the screen into vis space, so this
-        // surface culls nothing at all.
+    if surface.culling_rect_projection_failed {
         frame_state.profile.add(profiler::VIS_CULLING_RECT_FALLBACKS, 1);
     }
 
