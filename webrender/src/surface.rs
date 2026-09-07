@@ -7,9 +7,8 @@
 //! helpers.
 
 use api::units::*;
-use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::command_buffer::{CommandBufferBuilderKind, CommandBufferList, CommandBufferBuilder, CommandBufferIndex};
-use crate::internal_types::{FastHashMap, FastHashSet, Filter};
+use crate::internal_types::{FastHashMap, FastHashSet};
 use crate::picture_composite_mode::PictureCompositeMode;
 use crate::tile_cache::{TileKey, SubSliceIndex, MAX_COMPOSITOR_SURFACES};
 use crate::prim_store::PictureIndex;
@@ -338,38 +337,28 @@ impl SurfaceInfo {
         composite_mode: &PictureCompositeMode,
         frame_context: &FrameVisibilityContext,
     ) {
-        // Set the default culling rect to be the parent, in case we fail
-        // any mappings below due to weird perspective or invalid transforms.
-        self.culling_rect = parent_culling_rect;
+        // Content outside the region this surface contributes to can still be
+        // sampled by it: a blur, a drop shadow or an SVG filter graph reads
+        // outside its own destination. Expand by what the composite mode reads,
+        // in surface space where those amounts are expressed, so the content
+        // feeding those samples stays inside the culling rect.
+        let map_surface_to_vis: SpaceMapper<PicturePixel, VisPixel> = SpaceMapper::new_with_target(
+            self.visibility_spatial_node_index,
+            self.surface_spatial_node_index,
+            parent_culling_rect,
+            frame_context.spatial_tree,
+        );
 
-        if let PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate, .. }) = composite_mode {
-            if *should_inflate {
-                // Space mapping vis <-> picture space
-                let map_surface_to_vis = SpaceMapper::new_with_target(
-                    self.visibility_spatial_node_index,
-                    self.surface_spatial_node_index,
-                    parent_culling_rect,
-                    frame_context.spatial_tree,
-                );
+        // Unmapping to surface space may be quite conservative in the case of a
+        // complex transform, especially perspective.
+        let expanded = map_surface_to_vis
+            .unmap(&parent_culling_rect)
+            .map(|local_rect| composite_mode.get_required_source_rect(self, local_rect.cast_unit()))
+            .and_then(|required_rect| map_surface_to_vis.map(&required_rect.cast_unit()));
 
-                // Unmap the parent culling rect to surface space. Note that this may be
-                // quite conservative in the case of a complex transform, especially perspective.
-                if let Some(local_parent_culling_rect) = map_surface_to_vis.unmap(&parent_culling_rect) {
-                    let (width_factor, height_factor) = self.clamp_blur_radius(*width, *height);
-
-                    // Inflate by the local-space amount this surface extends.
-                    let expanded_rect: PictureBox2D = local_parent_culling_rect.inflate(
-                        width_factor.ceil() * BLUR_SAMPLE_SCALE,
-                        height_factor.ceil() * BLUR_SAMPLE_SCALE,
-                    );
-
-                    // Map back to the expected vis-space culling rect
-                    if let Some(rect) = map_surface_to_vis.map(&expanded_rect) {
-                        self.culling_rect = rect;
-                    }
-                }
-            }
-        }
+        // A failed mapping must not leave the un-expanded rect in place: that is
+        // exactly the rect that culls the content the expansion exists to keep.
+        self.culling_rect = expanded.unwrap_or_else(VisRect::max_rect);
     }
 
     pub fn map_to_device_rect(

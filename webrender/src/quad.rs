@@ -1185,9 +1185,21 @@ fn prepare_tiles(
         let clip_instance = frame_state.clip_store.get_instance_from_range(&clip_chain.clips_range, i);
         let clip_node = &interned_clips[clip_instance.handle];
 
-        clip_to_raster.set_target_spatial_node(clip_instance.spatial_node_index, spatial_tree);
+        // A clip outside the 3D context that established this surface's raster
+        // root has no transform into raster space to ask for, so don't ask: the
+        // spatial tree only builds transforms towards the root and would panic.
+        // Such a clip takes the same conservative path as a non-axis-aligned one.
+        let clip_to_raster_scale_offset = if spatial_tree.can_get_relative_transform(
+            clip_instance.spatial_node_index,
+            transform.raster_spatial_node_index(),
+        ) {
+            clip_to_raster.set_target_spatial_node(clip_instance.spatial_node_index, spatial_tree);
+            clip_to_raster.as_2d_scale_offset()
+        } else {
+            None
+        };
 
-        let transform = match clip_to_raster.as_2d_scale_offset() {
+        let transform = match clip_to_raster_scale_offset {
             Some(t) => t.then_scale(transform.device_pixel_scale.0),
             None => {
                 // If the clip transform is not axis-aligned, just assume the entire primitive
