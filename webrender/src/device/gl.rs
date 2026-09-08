@@ -33,7 +33,9 @@ use std::{
     time::Duration,
 };
 use webrender_build::shader::{
-    ProgramSourceDigest, ShaderKind, ShaderSourceMap, ShaderVersion, build_shader_main_string, build_shader_prefix_string, do_build_shader_string, shader_source_from_file,
+    ProgramSourceDigest, ShaderFeatureFlags, ShaderKind, ShaderSourceMap, ShaderVersion,
+    build_shader_main_string, build_shader_prefix_string, do_build_shader_string,
+    shader_source_from_file,
 };
 use malloc_size_of::MallocSizeOfOps;
 
@@ -1034,6 +1036,12 @@ pub struct Capabilities {
     /// textures can be used as normal. If false, external textures can only be rendered with
     /// certain shaders, and must first be copied in to regular textures for others.
     pub supports_image_external_essl3: bool,
+    /// Whether rectangle textures (GL_TEXTURE_RECTANGLE) can be sampled.
+    pub supports_texture_rect: bool,
+    /// Whether external textures (GL_TEXTURE_EXTERNAL_OES) can be sampled.
+    pub supports_texture_external: bool,
+    /// Whether external textures can be sampled as BT.709 YUV, via GL_EXT_YUV_target.
+    pub supports_texture_external_bt709: bool,
     /// Whether the VAO must be rebound after an attached VBO has been orphaned.
     pub requires_vao_rebind_after_orphaning: bool,
     /// Whether glReadPixels can read back BGRA directly (e.g. on GLES this
@@ -1871,6 +1879,13 @@ impl Device {
             _ => supports_extension(&extensions, "GL_OES_EGL_image_external_essl3"),
         };
 
+        let (supports_texture_rect, supports_texture_external) = match gl.get_type() {
+            gl::GlType::Gl => (true, false),
+            gl::GlType::Gles => (false, true),
+        };
+        let supports_texture_external_bt709 =
+            supports_texture_external && supports_extension(&extensions, "GL_EXT_YUV_target");
+
         let mut requires_batched_texture_uploads = None;
         if is_software_webrender {
             // No benefit to batching texture uploads with swgl.
@@ -1992,6 +2007,9 @@ impl Device {
                 uses_native_clip_mask,
                 uses_native_antialiasing,
                 supports_image_external_essl3,
+                supports_texture_rect,
+                supports_texture_external,
+                supports_texture_external_bt709,
                 requires_vao_rebind_after_orphaning,
                 supports_bgra_read,
                 supports_base_instance,
@@ -2092,6 +2110,24 @@ impl Device {
 
     pub fn get_capabilities(&self) -> &Capabilities {
         &self.capabilities
+    }
+
+    pub fn shader_feature_flags(&self) -> ShaderFeatureFlags {
+        match self.gl.get_type() {
+            gl::GlType::Gl => ShaderFeatureFlags::GL,
+            gl::GlType::Gles => {
+                let mut flags = ShaderFeatureFlags::GLES;
+                flags |= if self.capabilities.supports_image_external_essl3 {
+                    ShaderFeatureFlags::TEXTURE_EXTERNAL
+                } else {
+                    ShaderFeatureFlags::TEXTURE_EXTERNAL_ESSL1
+                };
+                if self.capabilities.supports_texture_external_bt709 {
+                    flags |= ShaderFeatureFlags::TEXTURE_EXTERNAL_BT709;
+                }
+                flags
+            }
+        }
     }
 
     pub fn preferred_color_formats(&self) -> TextureFormatPair<ImageFormat> {
