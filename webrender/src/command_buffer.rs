@@ -229,6 +229,9 @@ fn encode_blend_mode(blend_mode: BlendMode) -> u32 {
         BlendMode::Exclusion => 6,
         BlendMode::PlusLighter => 7,
         BlendMode::Advanced(mode) => 8 + mode as u32,
+        BlendMode::Multiply | BlendMode::ShowOverdraw => {
+            unreachable!("blend mode {:?} is set by the renderer, not by batches", blend_mode);
+        }
     }
 }
 

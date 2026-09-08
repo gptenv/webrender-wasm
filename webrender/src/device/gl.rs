@@ -987,6 +987,26 @@ pub enum GraphicsApi {
     OpenGL,
 }
 
+/// How a draw is blended with the contents of the bound draw target.
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub enum BlendMode {
+    None,
+    Alpha,
+    PremultipliedAlpha,
+    PremultipliedDestOut,
+    /// Destination scaled by source, used to intersect clip masks.
+    Multiply,
+    SubpixelDualSource,
+    Advanced(MixBlendMode),
+    Screen,
+    Exclusion,
+    PlusLighter,
+    /// Debug visualisation that accumulates overdraw.
+    ShowOverdraw,
+}
+
 /// Describes the graphics API and driver a device is running on.
 #[derive(Clone, Debug)]
 pub struct GraphicsApiInfo {
@@ -3950,23 +3970,24 @@ impl Device {
         }
     }
 
-    pub fn enable_depth(&self, depth_func: DepthFunction) {
-        assert!(self.depth_available, "Enabling depth test without depth target");
-        self.gl.enable(gl::DEPTH_TEST);
-        self.gl.depth_func(depth_func as gl::GLuint);
+    pub fn set_depth_test(&self, depth_func: Option<DepthFunction>) {
+        match depth_func {
+            Some(depth_func) => {
+                assert!(self.depth_available, "Enabling depth test without depth target");
+                self.gl.enable(gl::DEPTH_TEST);
+                self.gl.depth_func(depth_func as gl::GLuint);
+            }
+            None => {
+                self.gl.disable(gl::DEPTH_TEST);
+            }
+        }
     }
 
-    pub fn disable_depth(&self) {
-        self.gl.disable(gl::DEPTH_TEST);
-    }
-
-    pub fn enable_depth_write(&self) {
-        assert!(self.depth_available, "Enabling depth write without depth target");
-        self.gl.depth_mask(true);
-    }
-
-    pub fn disable_depth_write(&self) {
-        self.gl.depth_mask(false);
+    pub fn set_depth_write(&self, enable: bool) {
+        if enable {
+            assert!(self.depth_available, "Enabling depth write without depth target");
+        }
+        self.gl.depth_mask(enable);
     }
 
     pub fn disable_stencil(&self) {
@@ -3990,15 +4011,11 @@ impl Device {
         self.gl.disable(gl::SCISSOR_TEST);
     }
 
-    pub fn enable_color_write(&self) {
-        self.gl.color_mask(true, true, true, true);
+    pub fn set_color_write(&self, enable: bool) {
+        self.gl.color_mask(enable, enable, enable, enable);
     }
 
-    pub fn disable_color_write(&self) {
-        self.gl.color_mask(false, false, false, false);
-    }
-
-    pub fn set_blend(&mut self, enable: bool) {
+    fn set_blend(&mut self, enable: bool) {
         if enable {
             self.gl.enable(gl::BLEND);
         } else {
@@ -4007,6 +4024,27 @@ impl Device {
         #[cfg(debug_assertions)]
         {
             self.shader_is_ready = false;
+        }
+    }
+
+    pub fn set_blend_mode(&mut self, mode: BlendMode) {
+        if mode == BlendMode::None {
+            self.set_blend(false);
+            return;
+        }
+        self.set_blend(true);
+        match mode {
+            BlendMode::None => unreachable!(),
+            BlendMode::Alpha => self.set_blend_mode_alpha(),
+            BlendMode::PremultipliedAlpha => self.set_blend_mode_premultiplied_alpha(),
+            BlendMode::PremultipliedDestOut => self.set_blend_mode_premultiplied_dest_out(),
+            BlendMode::Multiply => self.set_blend_mode_multiply(),
+            BlendMode::SubpixelDualSource => self.set_blend_mode_subpixel_dual_source(),
+            BlendMode::Advanced(mix_mode) => self.set_blend_mode_advanced(mix_mode),
+            BlendMode::Screen => self.set_blend_mode_screen(),
+            BlendMode::Exclusion => self.set_blend_mode_exclusion(),
+            BlendMode::PlusLighter => self.set_blend_mode_plus_lighter(),
+            BlendMode::ShowOverdraw => self.set_blend_mode_show_overdraw(),
         }
     }
 
@@ -4027,65 +4065,65 @@ impl Device {
         }
     }
 
-    pub fn set_blend_mode_alpha(&mut self) {
+    fn set_blend_mode_alpha(&mut self) {
         self.set_blend_factors(
             (gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
 
-    pub fn set_blend_mode_premultiplied_alpha(&mut self) {
+    fn set_blend_mode_premultiplied_alpha(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
 
-    pub fn set_blend_mode_premultiplied_dest_out(&mut self) {
+    fn set_blend_mode_premultiplied_dest_out(&mut self) {
         self.set_blend_factors(
             (gl::ZERO, gl::ONE_MINUS_SRC_ALPHA),
             (gl::ZERO, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
 
-    pub fn set_blend_mode_multiply(&mut self) {
+    fn set_blend_mode_multiply(&mut self) {
         self.set_blend_factors(
             (gl::ZERO, gl::SRC_COLOR),
             (gl::ZERO, gl::SRC_ALPHA),
         );
     }
-    pub fn set_blend_mode_subpixel_dual_source(&mut self) {
+    fn set_blend_mode_subpixel_dual_source(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC1_COLOR),
             (gl::ONE, gl::ONE_MINUS_SRC1_ALPHA),
         );
     }
-    pub fn set_blend_mode_screen(&mut self) {
+    fn set_blend_mode_screen(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC_COLOR),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
-    pub fn set_blend_mode_plus_lighter(&mut self) {
+    fn set_blend_mode_plus_lighter(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE),
             (gl::ONE, gl::ONE),
         );
     }
-    pub fn set_blend_mode_exclusion(&mut self) {
+    fn set_blend_mode_exclusion(&mut self) {
         self.set_blend_factors(
             (gl::ONE_MINUS_DST_COLOR, gl::ONE_MINUS_SRC_COLOR),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
-    pub fn set_blend_mode_show_overdraw(&mut self) {
+    fn set_blend_mode_show_overdraw(&mut self) {
         self.set_blend_factors(
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
             (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
 
-    pub fn set_blend_mode_advanced(&mut self, mode: MixBlendMode) {
+    fn set_blend_mode_advanced(&mut self, mode: MixBlendMode) {
         self.gl.blend_equation(match mode {
             MixBlendMode::Normal => {
                 // blend factor only make sense for the normal mode

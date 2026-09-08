@@ -11,7 +11,7 @@ use crate::composite::{NativeSurfaceId, NativeTileId};
 use crate::debug_colors;
 use crate::debug_font_data;
 use crate::debug_item::DebugItem;
-use crate::device::{Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
+use crate::device::{BlendMode, Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
 use crate::device::{DrawTarget, ReadTarget, TextureFlags};
 use crate::device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
 use euclid::{rect, Point2D, Rect, Size2D, Transform3D, default};
@@ -320,9 +320,8 @@ impl DebugRenderer {
         surface_origin_is_top_left: bool,
     ) {
         if let Some(viewport_size) = viewport_size {
-            device.disable_depth();
-            device.set_blend(true);
-            device.set_blend_mode_premultiplied_alpha();
+            device.set_depth_test(None);
+            device.set_blend_mode(BlendMode::PremultipliedAlpha);
 
             let (bottom, top) = if surface_origin_is_top_left {
                 (0.0, viewport_size.height as f32 * scale)

@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::mem;
 use crate::debug_item::DebugItem;
 use crate::segment::EdgeMask;
-use crate::device::DrawTarget;
+use crate::device::{BlendMode, DrawTarget};
 use crate::gpu_types::{CompositeInstance, ZBufferId};
 use crate::internal_types::{FastHashMap, TextureSource};
 use crate::picture::ResolvedSurfaceTexture;
@@ -80,8 +80,8 @@ impl Renderer {
 
         let opaque_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
 
-        self.device.disable_depth();
-        self.set_blend(false, FramebufferKind::Main);
+        self.device.set_depth_test(None);
+        self.set_blend_mode(BlendMode::None, FramebufferKind::Main);
 
         for surface in external_surfaces {
             // See if this surface needs to be updated
@@ -448,8 +448,8 @@ impl Renderer {
         layer: &SwapChainLayer,
     ) {
         self.device.bind_draw_target(draw_target);
-        self.device.disable_depth_write();
-        self.device.disable_depth();
+        self.device.set_depth_write(false);
+        self.device.set_depth_test(None);
 
         // If using KHR_partial_update, call eglSetDamageRegion.
         // This must be called exactly once per frame, and prior to any rendering to the main
@@ -490,7 +490,7 @@ impl Renderer {
         let opaque_items = layer.occlusion.opaque_items();
         if !opaque_items.is_empty() {
             let opaque_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
-            self.set_blend(false, FramebufferKind::Main);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Main);
             self.draw_tile_list(
                 opaque_items.iter(),
                 &composite_state,
@@ -505,8 +505,7 @@ impl Renderer {
         let alpha_items = layer.occlusion.alpha_items();
         if !alpha_items.is_empty() {
             let transparent_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_TRANSPARENT);
-            self.set_blend(true, FramebufferKind::Main);
-            self.set_blend_mode_premultiplied_alpha(FramebufferKind::Main);
+            self.set_blend_mode(BlendMode::PremultipliedAlpha, FramebufferKind::Main);
             self.draw_tile_list(
                 alpha_items.iter().rev(),
                 &composite_state,

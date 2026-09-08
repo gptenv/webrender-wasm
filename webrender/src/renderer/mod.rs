@@ -599,20 +599,7 @@ impl TextureResolver {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub enum BlendMode {
-    None,
-    Alpha,
-    PremultipliedAlpha,
-    PremultipliedDestOut,
-    SubpixelDualSource,
-    Advanced(MixBlendMode),
-    Screen,
-    Exclusion,
-    PlusLighter,
-}
+pub use crate::device::BlendMode;
 
 impl BlendMode {
     /// Decides when a given mix-blend-mode can be implemented in terms of
@@ -1488,8 +1475,8 @@ impl Renderer {
             self.gpu_profiler.begin_frame(frame_id);
 
             self.device.disable_scissor();
-            self.device.disable_depth();
-            self.set_blend(false, FramebufferKind::Main);
+            self.device.set_depth_test(None);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Main);
             //self.update_shaders();
 
             self.update_texture_cache();
@@ -2299,13 +2286,13 @@ impl Renderer {
         projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
-        self.device.disable_depth_write();
+        self.device.set_depth_write(false);
 
         let has_prim_instances = prim_instances.iter().any(|map| !map.is_empty());
         if has_prim_instances || !prim_instances_with_scissor.is_empty() {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_INDIRECT_PRIM);
 
-            self.set_blend(false, FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Other);
 
             for (pattern_idx, prim_instances_map) in prim_instances.iter().enumerate() {
                 if prim_instances_map.is_empty() {
@@ -2338,8 +2325,7 @@ impl Renderer {
             }
 
             if !prim_instances_with_scissor.is_empty() {
-                self.set_blend(true, FramebufferKind::Other);
-                self.device.set_blend_mode_premultiplied_alpha();
+                self.set_blend_mode(BlendMode::PremultipliedAlpha, FramebufferKind::Other);
                 self.device.enable_scissor();
 
                 let mut prev_pattern = None;
@@ -2386,13 +2372,12 @@ impl Renderer {
         projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
-        self.device.disable_depth_write();
+        self.device.set_depth_write(false);
 
         {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_INDIRECT_MASK);
 
-            self.set_blend(true, FramebufferKind::Other);
-            self.set_blend_mode_multiply(FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::Multiply, FramebufferKind::Other);
 
             if !masks.mask_instances_fast.is_empty() {
                 self.shaders.borrow_mut().ps_mask_fast().bind(
@@ -2854,8 +2839,8 @@ impl Renderer {
                 );
             }
 
-            self.device.enable_depth_write();
-            self.set_blend(false, framebuffer_kind);
+            self.device.set_depth_write(true);
+            self.set_blend_mode(BlendMode::None, framebuffer_kind);
 
             let clear_color = target.clear_color.map(|c| c.to_array());
             let scissor_rect = if self.device.get_capabilities().supports_render_target_partial_update
@@ -2870,11 +2855,11 @@ impl Renderer {
                 // If updating only a dirty rect within a picture cache target, the
                 // clear must also be scissored to that dirty region.
                 Some(r) if self.clear_caches_with_quads => {
-                    self.device.enable_depth(DepthFunction::Always);
+                    self.device.set_depth_test(Some(DepthFunction::Always));
                     // Save the draw call count so that our reftests don't get confused...
                     let old_draw_call_count = stats.total_draw_calls;
                     if clear_color.is_none() {
-                        self.device.disable_color_write();
+                        self.device.set_color_write(false);
                     }
                     let instance = ClearInstance {
                         rect: [
@@ -2898,10 +2883,10 @@ impl Renderer {
                         stats,
                     );
                     if clear_color.is_none() {
-                        self.device.enable_color_write();
+                        self.device.set_color_write(true);
                     }
                     stats.total_draw_calls = old_draw_call_count;
-                    self.device.disable_depth();
+                    self.device.set_depth_test(None);
                 }
                 other => {
                     let scissor_rect = other.map(|rect| {
@@ -2910,7 +2895,7 @@ impl Renderer {
                     self.device.clear_target(clear_color, Some(1.0), scissor_rect);
                 }
             };
-            self.device.disable_depth_write();
+            self.device.set_depth_write(false);
         }
 
         match target.kind {
@@ -2985,10 +2970,10 @@ impl Renderer {
             && !self.debug_flags.contains(DebugFlags::DISABLE_OPAQUE_PASS) {
             let _gl = self.gpu_profiler.start_marker("opaque batches");
             let opaque_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
-            self.set_blend(false, framebuffer_kind);
+            self.set_blend_mode(BlendMode::None, framebuffer_kind);
             //Note: depth equality is needed for split planes
-            self.device.enable_depth(DepthFunction::LessEqual);
-            self.device.enable_depth_write();
+            self.device.set_depth_test(Some(DepthFunction::LessEqual));
+            self.device.set_depth_write(true);
 
             // Draw opaque batches front-to-back for maximum
             // z-buffer efficiency!
@@ -3019,17 +3004,16 @@ impl Renderer {
                     );
                 }
 
-            self.device.disable_depth_write();
+            self.device.set_depth_write(false);
             self.gpu_profiler.finish_sampler(opaque_sampler);
         } else {
-            self.device.disable_depth();
+            self.device.set_depth_test(None);
         }
 
         if !alpha_batch_container.alpha_batches.is_empty()
             && !self.debug_flags.contains(DebugFlags::DISABLE_ALPHA_PASS) {
             let _gl = self.gpu_profiler.start_marker("alpha batches");
             let transparent_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_TRANSPARENT);
-            self.set_blend(true, framebuffer_kind);
 
             let mut prev_blend_mode = BlendMode::None;
             let shaders_rc = self.shaders.clone();
@@ -3048,41 +3032,15 @@ impl Renderer {
 
                 if batch.key.blend_mode != prev_blend_mode {
                     match batch.key.blend_mode {
-                        _ if self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) &&
-                            framebuffer_kind == FramebufferKind::Main => {
-                            self.device.set_blend_mode_show_overdraw();
-                        }
                         BlendMode::None => {
                             unreachable!("bug: opaque blend in alpha pass");
                         }
-                        BlendMode::Alpha => {
-                            self.device.set_blend_mode_alpha();
+                        BlendMode::Advanced(..) if self.enable_advanced_blend_barriers => {
+                            self.device.blend_barrier();
                         }
-                        BlendMode::PremultipliedAlpha => {
-                            self.device.set_blend_mode_premultiplied_alpha();
-                        }
-                        BlendMode::PremultipliedDestOut => {
-                            self.device.set_blend_mode_premultiplied_dest_out();
-                        }
-                        BlendMode::SubpixelDualSource => {
-                            self.device.set_blend_mode_subpixel_dual_source();
-                        }
-                        BlendMode::Advanced(mode) => {
-                            if self.enable_advanced_blend_barriers {
-                                self.device.blend_barrier();
-                            }
-                            self.device.set_blend_mode_advanced(mode);
-                        }
-                        BlendMode::Screen => {
-                            self.device.set_blend_mode_screen();
-                        }
-                        BlendMode::Exclusion => {
-                            self.device.set_blend_mode_exclusion();
-                        }
-                        BlendMode::PlusLighter => {
-                            self.device.set_blend_mode_plus_lighter();
-                        }
+                        _ => {}
                     }
+                    self.set_blend_mode(batch.key.blend_mode, framebuffer_kind);
                     prev_blend_mode = batch.key.blend_mode;
                 }
 
@@ -3114,11 +3072,11 @@ impl Renderer {
                 );
             }
 
-            self.set_blend(false, framebuffer_kind);
+            self.set_blend_mode(BlendMode::None, framebuffer_kind);
             self.gpu_profiler.finish_sampler(transparent_sampler);
         }
 
-        self.device.disable_depth();
+        self.device.set_depth_test(None);
         if uses_scissor {
             self.device.disable_scissor();
         }
@@ -3142,8 +3100,8 @@ impl Renderer {
 
         let _timer = self.gpu_profiler.start_timer(GPU_TAG_SETUP_TARGET);
 
-        self.device.disable_depth();
-        self.set_blend(false, framebuffer_kind);
+        self.device.set_depth_test(None);
+        self.set_blend_mode(BlendMode::None, framebuffer_kind);
 
         let is_alpha = target.target_kind == RenderTargetKind::Alpha;
         let require_precise_clear = target.cached;
@@ -3348,9 +3306,9 @@ impl Renderer {
         }
 
         if needs_depth {
-            self.device.enable_depth_write();
+            self.device.set_depth_write(true);
         } else {
-            self.device.disable_depth_write();
+            self.device.set_depth_write(false);
         }
 
         self.clear_render_target(
@@ -3362,7 +3320,7 @@ impl Renderer {
         );
 
         if needs_depth {
-            self.device.disable_depth_write();
+            self.device.set_depth_write(false);
         }
 
         // Handle any resolves from parent pictures to this target
@@ -3387,8 +3345,7 @@ impl Renderer {
         {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_BORDER);
 
-            self.set_blend(true, FramebufferKind::Other);
-            self.set_blend_mode_premultiplied_alpha(FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::PremultipliedAlpha, FramebufferKind::Other);
 
             if !target.border_segments_solid.is_empty() {
                 self.shaders.borrow_mut().cs_border_solid().bind(
@@ -3462,15 +3419,14 @@ impl Renderer {
                 );
             }
 
-            self.set_blend(false, FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Other);
         }
 
         // Draw any line decorations for this target.
         if !target.line_decorations.is_empty() {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_LINE_DECORATION);
 
-            self.set_blend(true, FramebufferKind::Other);
-            self.set_blend_mode_premultiplied_alpha(FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::PremultipliedAlpha, FramebufferKind::Other);
 
             self.shaders.borrow_mut().cs_line_decoration().bind(
                 &mut self.device,
@@ -3488,7 +3444,7 @@ impl Renderer {
                 stats,
             );
 
-            self.set_blend(false, FramebufferKind::Other);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Other);
         }
 
 
@@ -3501,7 +3457,7 @@ impl Renderer {
         if !target.vertical_blurs.is_empty() || !target.horizontal_blurs.is_empty() {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_BLUR);
 
-            self.set_blend(false, framebuffer_kind);
+            self.set_blend_mode(BlendMode::None, framebuffer_kind);
             self.shaders.borrow_mut().cs_blur_rgba8().bind(
                 &mut self.device,
                 &projection,
@@ -3799,8 +3755,8 @@ impl Renderer {
             );
         }
 
-        self.device.disable_depth_write();
-        self.set_blend(false, FramebufferKind::Other);
+        self.device.set_depth_write(false);
+        self.set_blend_mode(BlendMode::None, FramebufferKind::Other);
         self.device.disable_stencil();
 
         self.bind_frame_data(frame);
@@ -4160,30 +4116,12 @@ impl Renderer {
 
     // Sets the blend mode. Blend is unconditionally set if the "show overdraw" debugging mode is
     // enabled.
-    fn set_blend(&mut self, mut blend: bool, framebuffer_kind: FramebufferKind) {
+    fn set_blend_mode(&mut self, mut mode: BlendMode, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
-            blend = true
+            mode = BlendMode::ShowOverdraw;
         }
-        self.device.set_blend(blend)
-    }
-
-    fn set_blend_mode_multiply(&mut self, framebuffer_kind: FramebufferKind) {
-        if framebuffer_kind == FramebufferKind::Main &&
-                self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
-            self.device.set_blend_mode_show_overdraw();
-        } else {
-            self.device.set_blend_mode_multiply();
-        }
-    }
-
-    fn set_blend_mode_premultiplied_alpha(&mut self, framebuffer_kind: FramebufferKind) {
-        if framebuffer_kind == FramebufferKind::Main &&
-                self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
-            self.device.set_blend_mode_show_overdraw();
-        } else {
-            self.device.set_blend_mode_premultiplied_alpha();
-        }
+        self.device.set_blend_mode(mode);
     }
 
     /// Clears the texture with a given color.
