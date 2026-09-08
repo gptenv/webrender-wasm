@@ -233,11 +233,11 @@ pub use crate::composite::{NativeSurfaceId, NativeTileId, NativeSurfaceInfo, Par
 pub use crate::composite::{MappableCompositor, MappedTileInfo, SWGLCompositeSurfaceInfo, WindowVisibility, WindowProperties};
 pub use crate::device::{UploadMethod, VertexUsageHint, get_gl_target, get_unoptimized_shader_source};
 pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver, FormatDesc, ShaderError};
-pub use crate::device::Device;
+pub use crate::device::{Device, GraphicsApi, GraphicsApiInfo};
 pub use crate::profiler::{ProfilerHooks, set_profiler_hooks};
 pub use crate::renderer::{
-    CpuProfile, DebugFlags, GpuProfile, GraphicsApi,
-    GraphicsApiInfo, PendingShadersToPrecache, PipelineInfo, Renderer, RendererError, RenderResults,
+    CpuProfile, DebugFlags, GpuProfile,
+    PendingShadersToPrecache, PipelineInfo, Renderer, RendererError, RenderResults,
     RendererStats, Shaders, SharedShaders, ShaderPrecacheFlags,
     MAX_VERTEX_TEXTURE_WIDTH,
 };

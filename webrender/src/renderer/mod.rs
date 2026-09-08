@@ -59,7 +59,7 @@ use crate::composite::{CompositorConfig, NativeSurfaceOperationDetails, NativeSu
 #[cfg(feature = "debugger")]
 use api::debugger::{CompositorDebugInfo, DebuggerTextureContent};
 use crate::debug_colors;
-use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, UploadPBOPool};
+use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, GraphicsApiInfo, UploadPBOPool};
 use crate::device::{ReadTarget, ShaderError, Texture, TextureFilter, TextureFlags, TextureSlot, Texel};
 use crate::device::query::{GpuSampler, GpuTimer};
 #[cfg(feature = "capture")]
@@ -346,18 +346,6 @@ impl Into<TextureSlot> for TextureSampler {
             TextureSampler::GpuBufferI => TextureSlot(10),
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum GraphicsApi {
-    OpenGL,
-}
-
-#[derive(Clone, Debug)]
-pub struct GraphicsApiInfo {
-    pub kind: GraphicsApi,
-    pub renderer: String,
-    pub version: String,
 }
 
 #[derive(Debug)]
@@ -907,11 +895,7 @@ impl Renderer {
     }
 
     pub fn get_graphics_api_info(&self) -> GraphicsApiInfo {
-        GraphicsApiInfo {
-            kind: GraphicsApi::OpenGL,
-            version: self.device.gl().get_string(gl::VERSION),
-            renderer: self.device.gl().get_string(gl::RENDERER),
-        }
+        self.device.api_info()
     }
 
     pub fn preferred_color_format(&self) -> ImageFormat {
@@ -1827,7 +1811,7 @@ impl Renderer {
         self.documents_seen.clear();
         self.shared_texture_cache_cleared = false;
 
-        self.check_gl_errors();
+        self.check_device_errors();
 
         if self.renderer_errors.is_empty() {
             Ok(results)
@@ -2049,7 +2033,7 @@ impl Renderer {
 
             upload_to_texture_cache(self, update_list.updates);
 
-            self.check_gl_errors();
+            self.check_device_errors();
         }
 
         if create_cache_texture_time > 0 {
@@ -2076,13 +2060,10 @@ impl Renderer {
         );
     }
 
-    fn check_gl_errors(&mut self) {
-        let err = self.device.gl().get_error();
-        if err == gl::OUT_OF_MEMORY {
+    fn check_device_errors(&mut self) {
+        if self.device.take_out_of_memory_error() {
             self.renderer_errors.push(RendererError::OutOfMemory);
         }
-
-        // Probably should check for other errors?
     }
 
     fn bind_textures(&mut self, textures: &BatchTextures) {
@@ -3088,7 +3069,7 @@ impl Renderer {
                         }
                         BlendMode::Advanced(mode) => {
                             if self.enable_advanced_blend_barriers {
-                                self.device.gl().blend_barrier_khr();
+                                self.device.blend_barrier();
                             }
                             self.device.set_blend_mode_advanced(mode);
                         }
