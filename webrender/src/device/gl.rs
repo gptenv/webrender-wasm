@@ -33,8 +33,7 @@ use std::{
     time::Duration,
 };
 use webrender_build::shader::{
-    ProgramSourceDigest, ShaderKind, ShaderVersion, build_shader_main_string,
-    build_shader_prefix_string, do_build_shader_string, shader_source_from_file,
+    ProgramSourceDigest, ShaderKind, ShaderSourceMap, ShaderVersion, build_shader_main_string, build_shader_prefix_string, do_build_shader_string, shader_source_from_file,
 };
 use malloc_size_of::MallocSizeOfOps;
 
@@ -760,12 +759,15 @@ impl ProgramSourceInfo {
                 let override_path = device.resource_override_path.as_ref();
                 let source_and_digest = UNOPTIMIZED_SHADERS.get(&name).expect("Shader not found");
 
+                let mut source_map = ShaderSourceMap::new();
+
                 // Hash the prefix string.
                 build_shader_prefix_string(
                     gl_version,
                     &features,
                     ShaderKind::Vertex,
                     &name,
+                    &mut source_map,
                     &mut |s| hasher.write(s.as_bytes()),
                 );
 
@@ -776,6 +778,7 @@ impl ProgramSourceInfo {
                     build_shader_main_string(
                         &name,
                         &|f| get_unoptimized_shader_source(f, override_path),
+                        &mut source_map,
                         &mut |s| h.write(s.as_bytes())
                     );
                     let d: ProgramSourceDigest = h.into();
@@ -3119,11 +3122,13 @@ impl Device {
         base_filename: &str,
         output: F,
     ) {
+        let mut source_map = ShaderSourceMap::new();
         do_build_shader_string(
             get_shader_version(&*self.gl),
             features,
             kind,
             base_filename,
+            &mut source_map,
             &|f| get_unoptimized_shader_source(f, self.resource_override_path.as_ref()),
             output,
         )

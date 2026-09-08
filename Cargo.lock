@@ -6297,6 +6297,7 @@ version = "0.0.2"
 dependencies = [
  "bitflags 2.11.0",
  "lazy_static",
+ "regex",
  "serde",
 ]
 
