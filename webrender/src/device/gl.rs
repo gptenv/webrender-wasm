@@ -1042,6 +1042,9 @@ pub struct Capabilities {
     pub supports_texture_external: bool,
     /// Whether external textures can be sampled as BT.709 YUV, via GL_EXT_YUV_target.
     pub supports_texture_external_bt709: bool,
+    /// Whether pixels read back from the default framebuffer arrive with the
+    /// top row first.
+    pub readback_rows_top_down: bool,
     /// Whether the VAO must be rebound after an attached VBO has been orphaned.
     pub requires_vao_rebind_after_orphaning: bool,
     /// Whether glReadPixels can read back BGRA directly (e.g. on GLES this
@@ -1886,6 +1889,10 @@ impl Device {
         let supports_texture_external_bt709 =
             supports_texture_external && supports_extension(&extensions, "GL_EXT_YUV_target");
 
+        // On Windows a GLES context is an ANGLE context, whose default framebuffer
+        // is a D3D surface with a top-left origin.
+        let readback_rows_top_down = cfg!(windows) && gl.get_type() == gl::GlType::Gles;
+
         let mut requires_batched_texture_uploads = None;
         if is_software_webrender {
             // No benefit to batching texture uploads with swgl.
@@ -2010,6 +2017,7 @@ impl Device {
                 supports_texture_rect,
                 supports_texture_external,
                 supports_texture_external_bt709,
+                readback_rows_top_down,
                 requires_vao_rebind_after_orphaning,
                 supports_bgra_read,
                 supports_base_instance,
