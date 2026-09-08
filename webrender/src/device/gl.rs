@@ -1005,6 +1005,9 @@ pub struct Capabilities {
     pub supports_buffer_storage: bool,
     /// Whether advanced blend equations are supported.
     pub supports_advanced_blend_equation: bool,
+    /// Whether advanced blend equations are coherent, meaning no barrier is
+    /// required between overlapping draws.
+    pub supports_advanced_blend_equation_coherent: bool,
     /// Whether dual-source blending is supported.
     pub supports_dual_source_blending: bool,
     /// Whether KHR_debug is supported for getting debug messages from
@@ -1788,6 +1791,8 @@ impl Device {
         let supports_advanced_blend_equation =
             supports_extension(&extensions, "GL_KHR_blend_equation_advanced") &&
             !is_adreno;
+        let supports_advanced_blend_equation_coherent =
+            supports_extension(&extensions, "GL_KHR_blend_equation_advanced_coherent");
 
         let supports_dual_source_blending = match gl.get_type() {
             gl::GlType::Gl => supports_extension(&extensions,"GL_ARB_blend_func_extended") &&
@@ -2011,6 +2016,7 @@ impl Device {
                 supports_copy_image_sub_data,
                 supports_buffer_storage,
                 supports_advanced_blend_equation,
+                supports_advanced_blend_equation_coherent,
                 supports_dual_source_blending,
                 supports_khr_debug,
                 supports_texture_swizzle,
@@ -2091,7 +2097,22 @@ impl Device {
         self.initialize_color_targets_with_pink = enabled;
     }
 
-    pub fn create_gpu_profiler(&self, debug_method: GpuDebugMethod) -> GpuProfiler {
+    /// Selects the best available means of annotating the command stream when
+    /// `enable_markers` is set.
+    pub fn create_gpu_profiler(&self, enable_markers: bool) -> GpuProfiler {
+        let debug_method = if !enable_markers {
+            GpuDebugMethod::None
+        } else if self.capabilities.supports_khr_debug {
+            GpuDebugMethod::KHR
+        } else if self.supports_extension("GL_EXT_debug_marker") {
+            GpuDebugMethod::MarkerEXT
+        } else {
+            warn!("asking to enable_gpu_markers but no supporting extension was found");
+            GpuDebugMethod::None
+        };
+
+        info!("using {:?}", debug_method);
+
         GpuProfiler::new(Rc::clone(&self.gl), debug_method)
     }
 
@@ -4096,7 +4117,7 @@ impl Device {
         }
     }
 
-    pub fn supports_extension(&self, extension: &str) -> bool {
+    fn supports_extension(&self, extension: &str) -> bool {
         supports_extension(&self.extensions, extension)
     }
 
