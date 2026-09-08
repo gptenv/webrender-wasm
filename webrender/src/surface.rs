@@ -130,18 +130,57 @@ fn resolve_dest_to_src_raster(
 /// node, so a surface's culling rect and every primitive or clip rect projected
 /// for a culling decision must be built against the same node.
 ///
-/// This is the root reference frame rather than the surface's own raster node,
-/// which means content drawn into an off-screen surface is culled against a
-/// region of the screen rather than a region of that surface's render target.
-/// Moving it to the raster node is the point of the migration described in
-/// `plan-wr-culling-in-raster-space.md`; this is the one place that decides.
+/// A snapping surface - a tile cache, or a surface that rasterizes against the
+/// root - uses its own raster node, so its content is culled against a region of
+/// the render target it is drawn into rather than a region of the screen. For a
+/// surface rasterizing against the root the two are the same node, so only tile
+/// caches actually move.
+///
+/// A non-snapping raster root (preserve-3d, perspective, `RasterSpace::Local`,
+/// huge scale) still uses the root. Its raster node can be inside a 3D context,
+/// where the screen has no axis-aligned pre-image and the culling rect would have
+/// to degrade to "cull nothing"; moving those is the remaining step of the
+/// migration described in `plan-wr-culling-in-raster-space.md`.
+///
+/// This is the one place that decides.
 pub fn visibility_node(
     raster_spatial_node_index: SpatialNodeIndex,
+    allow_snapping: bool,
     spatial_tree: &SpatialTree,
 ) -> SpatialNodeIndex {
     debug_assert_ne!(raster_spatial_node_index, SpatialNodeIndex::INVALID);
 
-    spatial_tree.root_reference_frame_index()
+    if allow_snapping {
+        raster_spatial_node_index
+    } else {
+        spatial_tree.root_reference_frame_index()
+    }
+}
+
+/// The mapping between a vis node's space and the screen framebuffer's device
+/// space. That is the root reference frame's space - the root carries no device
+/// scale of its own - which is what lets the screen rect be the target of this
+/// mapping.
+///
+/// Only a 2D scale and offset makes a rect mapped through this a sound bound in
+/// the other space: `map` and `unmap` take the bounding box of the four mapped
+/// corners, which is the exact image for a 2D scale+offset but *not* a superset
+/// of it once the mapping rotates or has perspective. The image of an
+/// axis-aligned rect is then a general quadrilateral, possibly unbounded, and
+/// its corners do not bound it; culling against that would drop content that is
+/// on screen. Callers must check `as_2d_scale_offset` before trusting the
+/// result for culling.
+fn vis_to_root_mapper(
+    visibility_spatial_node_index: SpatialNodeIndex,
+    bounds: DeviceRect,
+    spatial_tree: &SpatialTree,
+) -> SpaceMapper<VisPixel, DevicePixel> {
+    SpaceMapper::new_with_target(
+        spatial_tree.root_reference_frame_index(),
+        visibility_spatial_node_index,
+        bounds,
+        spatial_tree,
+    )
 }
 
 /// Maximum blur radius for blur filter
@@ -298,14 +337,10 @@ impl SurfaceInfo {
         );
 
         let visibility_spatial_node_index =
-            visibility_node(raster_spatial_node_index, spatial_tree);
+            visibility_node(raster_spatial_node_index, allow_snapping, spatial_tree);
 
-        // The culling rect is the screen, expressed in vis space. The root
-        // reference frame's space is the screen framebuffer's device space (the
-        // root carries no device scale of its own), which is what lets the
-        // screen rect be the target of this mapping.
-        let map_vis_to_root: SpaceMapper<VisPixel, DevicePixel> = SpaceMapper::new_with_target(
-            spatial_tree.root_reference_frame_index(),
+        // The culling rect is the screen, expressed in vis space.
+        let map_vis_to_root = vis_to_root_mapper(
             visibility_spatial_node_index,
             global_culling_rect,
             spatial_tree,
@@ -396,12 +431,64 @@ impl SurfaceInfo {
         }
     }
 
+    /// Derive this surface's culling rect from the one the parent surface uses.
+    ///
+    /// The parent's rect is in the parent's vis space, which is not this
+    /// surface's whenever the two pick different vis nodes, so it is mapped
+    /// across before anything else looks at it.
     pub fn update_culling_rect(
         &mut self,
+        parent_vis_spatial_node_index: SpatialNodeIndex,
         parent_culling_rect: VisRect,
         composite_mode: &PictureCompositeMode,
         frame_context: &FrameVisibilityContext,
     ) {
+        // A parent that culls nothing gives a child that culls nothing. Taking
+        // the general path instead would round-trip `max_rect` through
+        // projections that clip against the near plane, and the result need not
+        // still cover everything.
+        if parent_culling_rect == VisRect::max_rect() {
+            self.culling_rect = parent_culling_rect;
+            return;
+        }
+
+        let parent_culling_rect = if parent_vis_spatial_node_index == self.visibility_spatial_node_index {
+            parent_culling_rect
+        } else {
+            // Cross between the two vis spaces via the screen. The spatial tree
+            // only relates a node to one of its ancestors, and neither vis node
+            // need be an ancestor of the other, but both always relate to the
+            // root.
+            let map_parent_to_root = vis_to_root_mapper(
+                parent_vis_spatial_node_index,
+                frame_context.global_screen_device_rect,
+                frame_context.spatial_tree,
+            );
+            let map_vis_to_root = vis_to_root_mapper(
+                self.visibility_spatial_node_index,
+                frame_context.global_screen_device_rect,
+                frame_context.spatial_tree,
+            );
+
+            let projected = map_parent_to_root
+                .as_2d_scale_offset()
+                .and_then(|_| map_parent_to_root.map(&parent_culling_rect))
+                .and_then(|device_rect| {
+                    map_vis_to_root
+                        .as_2d_scale_offset()
+                        .and_then(|_| map_vis_to_root.unmap(&device_rect))
+                });
+
+            match projected {
+                Some(rect) => rect,
+                None => {
+                    // Cull nothing rather than everything; see `culling_rect`.
+                    self.culling_rect = VisRect::max_rect();
+                    return;
+                }
+            }
+        };
+
         // Content outside the region this surface contributes to can still be
         // sampled by it: a blur, a drop shadow or an SVG filter graph reads
         // outside its own destination. Expand by what the composite mode reads,

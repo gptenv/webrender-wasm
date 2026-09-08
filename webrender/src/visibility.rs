@@ -270,14 +270,15 @@ pub fn update_prim_visibility(
             );
 
             if let Some(parent_surface_index) = parent_surface_index {
-                let parent_culling_rect = frame_state
-                    .surfaces[parent_surface_index.0]
-                    .culling_rect;
+                let parent_surface = &frame_state.surfaces[parent_surface_index.0];
+                let parent_culling_rect = parent_surface.culling_rect;
+                let parent_vis_spatial_node_index = parent_surface.visibility_spatial_node_index;
 
                 let surface = &mut frame_state
                     .surfaces[raster_config.surface_index.0 as usize];
 
                 surface.update_culling_rect(
+                    parent_vis_spatial_node_index,
                     parent_culling_rect,
                     &raster_config.composite_mode,
                     frame_context,
