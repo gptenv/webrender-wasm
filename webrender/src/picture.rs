@@ -1042,13 +1042,24 @@ impl PictureInstance {
                 // right space here, we should be able to find the dirty rect in this space
                 // that was built during the dirty rect propagation at the beginning of the
                 // frame.
-                let map_ancestor_to_vis = SpaceMapper::<LayoutPixel, VisPixel>::new_with_target(
-                    visibility_spatial_node_index,
+                // The 3D context's containing block is normally inside the
+                // surface the dirty rect belongs to, but if it is not there is
+                // no transform between the two to ask for, and "no lateral
+                // bounds" is the same conservative answer as a failed unmap.
+                let ancestor_dirty_rect = if spatial_tree.can_get_relative_transform(
                     ancestor_spatial_node_index,
-                    VisRect::max_rect(),
-                    spatial_tree,
-                );
-                let ancestor_dirty_rect = map_ancestor_to_vis.unmap(&dirty_rect);
+                    visibility_spatial_node_index,
+                ) {
+                    let map_ancestor_to_vis = SpaceMapper::<LayoutPixel, VisPixel>::new_with_target(
+                        visibility_spatial_node_index,
+                        ancestor_spatial_node_index,
+                        VisRect::max_rect(),
+                        spatial_tree,
+                    );
+                    map_ancestor_to_vis.unmap(&dirty_rect)
+                } else {
+                    None
+                };
 
                 let ancestor_bounds = ancestor_dirty_rect.map(|r| r.cast().to_rect().to_untyped());
 

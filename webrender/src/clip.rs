@@ -1242,6 +1242,15 @@ pub enum ClipSpaceConversion {
     /// This Variant represents the transform from the clip's local space to
     /// the visibility space.
     Transform(LayoutToVisTransform),
+    /// The clip's space cannot be related to the visibility space, so whether
+    /// the clip affects the primitive can't be determined and a mask is assumed
+    /// to be needed.
+    ///
+    /// Reached when the clip sits outside the 3D context that established the
+    /// surface's raster root: relating the two would need a transform away from
+    /// the root, which the spatial tree does not provide because it is not
+    /// always invertible.
+    Indeterminate,
 }
 
 impl ClipSpaceConversion {
@@ -1264,13 +1273,18 @@ impl ClipSpaceConversion {
             let scale_offset = clip_spatial_node.content_transform
                 .then(&prim_spatial_node.content_transform.inverse());
             ClipSpaceConversion::ScaleOffset(scale_offset)
-        } else {
+        } else if spatial_tree.can_get_relative_transform(
+            clip_spatial_node_index,
+            visibility_spatial_node_index,
+        ) {
             ClipSpaceConversion::Transform(
                 spatial_tree.get_relative_transform(
                     clip_spatial_node_index,
                     visibility_spatial_node_index,
                 ).into_transform().cast_unit()
             )
+        } else {
+            ClipSpaceConversion::Indeterminate
         }
     }
 
@@ -1282,7 +1296,8 @@ impl ClipSpaceConversion {
             ClipSpaceConversion::ScaleOffset(..) => {
                 ClipNodeFlags::SAME_COORD_SYSTEM
             }
-            ClipSpaceConversion::Transform(..) => {
+            ClipSpaceConversion::Transform(..) |
+            ClipSpaceConversion::Indeterminate => {
                 ClipNodeFlags::empty()
             }
         }
@@ -1442,6 +1457,7 @@ pub struct VisClipStats {
     pub projections: usize,
     pub projection_fails: usize,
     pub rejects: usize,
+    pub indeterminate: usize,
 }
 
 // A clip chain instance is what gets built for a given clip
@@ -1693,6 +1709,13 @@ impl ClipStore {
                 ClipSpaceConversion::ScaleOffset(ref scale_offset) => {
                     has_non_local_clips = true;
                     node.item.kind.get_clip_result(&scale_offset.unmap_rect(&local_bounding_rect), node_info.clip_rect)
+                }
+                ClipSpaceConversion::Indeterminate => {
+                    // Can't tell whether the clip affects the primitive, so
+                    // assume it does. A mask is always a safe answer.
+                    has_non_local_clips = true;
+                    self.vis_stats.indeterminate += 1;
+                    ClipResult::Partial
                 }
                 ClipSpaceConversion::Transform(ref transform) => {
                     has_non_local_clips = true;
@@ -2355,7 +2378,8 @@ fn add_clip_node_to_current_chain(
                     None => return false,
                 };
             }
-            ClipSpaceConversion::Transform(..) => {
+            ClipSpaceConversion::Transform(..) |
+            ClipSpaceConversion::Indeterminate => {
                 // Map the local clip rect directly into the same space as the picture
                 // surface. This will often be the same space as the clip itself, which
                 // results in a reduction in allocated clip mask size.

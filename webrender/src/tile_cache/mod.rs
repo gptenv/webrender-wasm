@@ -1200,7 +1200,8 @@ impl TileCacheInstance {
                                         shape_bottom_right: radius.shape_bottom_right,
                                     },
                                 ),
-                                ClipSpaceConversion::Transform(..) => unreachable!(),
+                                ClipSpaceConversion::Transform(..) |
+                                ClipSpaceConversion::Indeterminate => unreachable!(),
                             };
 
                             combined = Some(match combined {
@@ -1967,7 +1968,8 @@ impl TileCacheInstance {
                             },
                         )
                     }
-                    ClipSpaceConversion::Transform(..) => {
+                    ClipSpaceConversion::Transform(..) |
+                    ClipSpaceConversion::Indeterminate => {
                         unreachable!();
                     }
                 };
