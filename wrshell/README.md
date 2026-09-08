@@ -88,6 +88,7 @@ In the GUI:
 * Clicking a primitive selects it. The panel on the right shows its details (local rect, approximate device rect, spatial node, outcome of the last visibility pass, ...) along with its ancestors and children, which can be clicked to navigate.
 * Hovering a primitive highlights it in the rendered frame. **Replace** swaps the primitive for an opaque pink quad (honoring its clips, transform and z-order), **Overlay** outlines its device rect in pink on top of the composited frame, leaving its content visible, so that it can be located even when occluded. Moving the pointer away clears the highlight.
 * The checkbox next to each primitive disables it; a disabled picture hides its whole subtree. **Enable all** clears the disabled set.
+* Right-clicking a node opens a menu of bulk actions. **Focus on this node** disables every other primitive, except the node's ancestors (disabling them would hide the node too) and, for pictures and tile caches, its descendants. **Disable children** / **Enable children** act on the subtree of a picture.
 
 Both take effect at frame building time without rebuilding the scene. Primitive indices are only valid for one built scene: when a new display list arrives, WebRender drops the override, and the panel reports an error if a stale selection is pushed. Click **Refresh** to fetch the new scene.
 

@@ -4,8 +4,9 @@
 
 //! Scene tree panel: shows the picture / primitive tree of the built scene
 //! currently rendered by the WR instance. Hovering a primitive highlights it
-//! in the rendered frame, clicking it shows its details in a side panel, and
-//! each primitive has a checkbox to disable it.
+//! in the rendered frame, clicking it shows its details in a side panel, each
+//! primitive has a checkbox to disable it, and right-clicking a row opens a
+//! menu of actions on the node.
 
 use std::collections::HashSet;
 use webrender_api::ColorF;
@@ -30,6 +31,28 @@ struct Selection {
     selected: Option<u32>,
     highlight_mode: SceneDebugHighlightMode,
     disabled: HashSet<u32>,
+    /// Action picked in a row's context menu, applied once the whole tree has
+    /// been laid out since it needs the tree while the rows only see nodes.
+    pending: Option<Action>,
+}
+
+/// A node of the tree, as referred to by context menu actions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Target {
+    Prim(u32),
+    Root(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Action {
+    /// Disable every primitive except the target, its ancestors (hiding them
+    /// would hide the target too) and its descendants.
+    Focus(Target),
+    /// Disable the target's descendants, keeping the target itself.
+    DisableChildren(Target),
+    /// Enable the target and all of its descendants.
+    EnableSubtree(Target),
+    EnableAll,
 }
 
 impl SceneTreeState {
@@ -42,6 +65,7 @@ impl SceneTreeState {
                 selected: None,
                 highlight_mode: SceneDebugHighlightMode::Replace,
                 disabled: HashSet::new(),
+                pending: None,
             },
             status: "Not loaded".to_string(),
         }
@@ -164,6 +188,10 @@ pub fn ui(app: &mut Gui, ui: &mut egui::Ui) {
                 }
             });
         });
+
+        if let Some(action) = selection.pending.take() {
+            changed |= apply_action(tree, selection, action);
+        }
     }
 
     // The highlight follows the hovered row. Only push when it actually moves
@@ -220,6 +248,34 @@ fn node_ui(
     }
     let text = egui::WidgetText::from(job);
 
+    let target = match node.prim_index {
+        Some(index) => Target::Prim(index),
+        None => Target::Root(salt),
+    };
+    let context_menu = |ui: &mut egui::Ui, selection: &mut Selection| {
+        if ui.button("Focus on this node")
+            .on_hover_text("Disable every other primitive, except this node's ancestors and descendants")
+            .clicked()
+        {
+            selection.pending = Some(Action::Focus(target));
+            ui.close();
+        }
+        if !node.children.is_empty() {
+            if ui.button("Disable children").clicked() {
+                selection.pending = Some(Action::DisableChildren(target));
+                ui.close();
+            }
+            if ui.button("Enable children").clicked() {
+                selection.pending = Some(Action::EnableSubtree(target));
+                ui.close();
+            }
+        }
+        if ui.add_enabled(!selection.disabled.is_empty(), egui::Button::new("Enable all")).clicked() {
+            selection.pending = Some(Action::EnableAll);
+            ui.close();
+        }
+    };
+
     let row = |ui: &mut egui::Ui, selection: &mut Selection| -> bool {
         let mut changed = false;
         if let Some(index) = node.prim_index {
@@ -240,8 +296,10 @@ fn node_ui(
             if response.clicked() {
                 selection.selected = if selected { None } else { Some(index) };
             }
+            response.context_menu(|ui| context_menu(ui, selection));
         } else {
-            ui.label(text.clone());
+            let response = ui.add(egui::Label::new(text.clone()).sense(egui::Sense::click()));
+            response.context_menu(|ui| context_menu(ui, selection));
         }
         changed
     };
@@ -264,6 +322,78 @@ fn node_ui(
     }
 
     changed
+}
+
+/// Apply a context menu action to the disabled set. Returns whether the set
+/// changed.
+fn apply_action(tree: &SceneDebugTree, selection: &mut Selection, action: Action) -> bool {
+    let target = match action {
+        Action::Focus(target) | Action::DisableChildren(target) | Action::EnableSubtree(target) => target,
+        Action::EnableAll => {
+            let was_empty = selection.disabled.is_empty();
+            selection.disabled.clear();
+            return !was_empty;
+        }
+    };
+
+    let mut path = Vec::new();
+    let found = match target {
+        Target::Prim(index) => tree.roots.iter().any(|root| find_path(root, index, &mut path)),
+        Target::Root(i) => tree.roots.get(i).map_or(false, |root| {
+            path.push(root);
+            true
+        }),
+    };
+    if !found {
+        return false;
+    }
+    let node = *path.last().unwrap();
+
+    let mut subtree = Vec::new();
+    for child in &node.children {
+        collect_prims(child, &mut subtree);
+    }
+
+    let before = selection.disabled.clone();
+    match action {
+        Action::Focus(_) => {
+            let mut all = Vec::new();
+            for root in &tree.roots {
+                collect_prims(root, &mut all);
+            }
+            selection.disabled = all.into_iter().collect();
+            for ancestor in &path {
+                if let Some(index) = ancestor.prim_index {
+                    selection.disabled.remove(&index);
+                }
+            }
+            for index in subtree {
+                selection.disabled.remove(&index);
+            }
+        }
+        Action::DisableChildren(_) => {
+            selection.disabled.extend(subtree);
+        }
+        Action::EnableSubtree(_) => {
+            if let Some(index) = node.prim_index {
+                selection.disabled.remove(&index);
+            }
+            for index in subtree {
+                selection.disabled.remove(&index);
+            }
+        }
+        Action::EnableAll => unreachable!(),
+    }
+    selection.disabled != before
+}
+
+fn collect_prims(node: &SceneDebugNode, out: &mut Vec<u32>) {
+    if let Some(index) = node.prim_index {
+        out.push(index);
+    }
+    for child in &node.children {
+        collect_prims(child, out);
+    }
 }
 
 /// Locate the node for a primitive index. On success `path` holds the chain
