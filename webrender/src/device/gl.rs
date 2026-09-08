@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::super::shader_source::{OPTIMIZED_SHADERS, UNOPTIMIZED_SHADERS};
+use super::query_gl::{GpuDebugMethod, GpuProfiler};
 use api::{ImageDescriptor, ImageFormat, Parameter, BoolParameter, IntParameter, ImageRendering};
 use api::{MixBlendMode, ImageBufferKind, VoidPtrToSizeFn};
 use api::{CrashAnnotator, CrashAnnotation, CrashAnnotatorGuard};
@@ -2090,8 +2091,8 @@ impl Device {
         self.initialize_color_targets_with_pink = enabled;
     }
 
-    pub fn rc_gl(&self) -> &Rc<dyn gl::Gl> {
-        &self.gl
+    pub fn create_gpu_profiler(&self, debug_method: GpuDebugMethod) -> GpuProfiler {
+        GpuProfiler::new(Rc::clone(&self.gl), debug_method)
     }
 
     pub fn set_parameter(&mut self, param: &Parameter) {
