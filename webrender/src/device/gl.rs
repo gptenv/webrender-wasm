@@ -642,32 +642,32 @@ impl Drop for VAO {
 }
 
 #[derive(Debug)]
-pub struct PBO {
+pub struct TransferBuffer {
     id: gl::GLuint,
     reserved_size: usize,
 }
 
-impl PBO {
+impl TransferBuffer {
     pub fn get_reserved_size(&self) -> usize {
         self.reserved_size
     }
 }
 
-impl Drop for PBO {
+impl Drop for TransferBuffer {
     fn drop(&mut self) {
         debug_assert!(
             thread::panicking() || self.id == 0,
-            "renderer::deinit not called or PBO not returned to pool"
+            "renderer::deinit not called or TransferBuffer not returned to pool"
         );
     }
 }
 
-pub struct BoundPBO<'a> {
+pub struct MappedTransferBuffer<'a> {
     device: &'a mut Device,
     pub data: &'a [u8]
 }
 
-impl<'a> Drop for BoundPBO<'a> {
+impl<'a> Drop for MappedTransferBuffer<'a> {
     fn drop(&mut self) {
         self.device.gl.unmap_buffer(gl::PIXEL_PACK_BUFFER);
         self.device.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, 0);
@@ -716,6 +716,9 @@ impl ProgramSourceInfo {
 
         // Setup.
         let mut hasher = DefaultHasher::new();
+        // Cached binaries are only valid for the graphics API that produced
+        // them, so keep digests from different backends distinct.
+        hasher.write(b"opengl");
         let gl_version = get_shader_version(&*device.gl());
 
         // Hash the renderer name.
@@ -849,13 +852,15 @@ impl ProgramSourceInfo {
 #[cfg_attr(feature = "serialize_program", derive(Deserialize, Serialize))]
 pub struct ProgramBinary {
     bytes: Vec<u8>,
-    format: gl::GLenum,
+    /// Backend-defined format tag for `bytes`. For OpenGL this is the binary
+    /// format returned by glGetProgramBinary.
+    format: u32,
     source_digest: ProgramSourceDigest,
 }
 
 impl ProgramBinary {
     fn new(bytes: Vec<u8>,
-           format: gl::GLenum,
+           format: u32,
            source_digest: ProgramSourceDigest) -> Self {
         ProgramBinary {
             bytes,
@@ -1044,6 +1049,21 @@ pub struct GraphicsApiInfo {
     pub kind: GraphicsApi,
     pub renderer: String,
     pub version: String,
+}
+
+/// Configuration for creating a `Device`.
+pub struct DeviceOptions {
+    pub crash_annotator: Option<Box<dyn CrashAnnotator>>,
+    pub resource_override_path: Option<PathBuf>,
+    pub use_optimized_shaders: bool,
+    pub upload_method: UploadMethod,
+    pub batched_upload_threshold: i32,
+    pub cached_programs: Option<Rc<ProgramCache>>,
+    pub allow_texture_storage_support: bool,
+    pub allow_texture_swizzling: bool,
+    pub dump_shader_source: Option<String>,
+    pub surface_origin_is_top_left: bool,
+    pub panic_on_gl_error: bool,
 }
 
 #[derive(Debug)]
@@ -1260,7 +1280,7 @@ pub struct Device {
     /// Required stride alignment for pixel transfers. This may be required for
     /// correctness reasons due to driver bugs, or for performance reasons to
     /// ensure we remain on the fast-path for transfers.
-    required_pbo_stride: StrideAlignment,
+    required_transfer_stride: StrideAlignment,
 
     /// Whether we must ensure the source strings passed to glShaderSource()
     /// are null-terminated, to work around driver bugs.
@@ -1564,18 +1584,21 @@ fn gl_error_string(code: u32) -> &'static str {
 impl Device {
     pub fn new(
         mut gl: Rc<dyn gl::Gl>,
-        crash_annotator: Option<Box<dyn CrashAnnotator>>,
-        resource_override_path: Option<PathBuf>,
-        use_optimized_shaders: bool,
-        upload_method: UploadMethod,
-        batched_upload_threshold: i32,
-        cached_programs: Option<Rc<ProgramCache>>,
-        allow_texture_storage_support: bool,
-        allow_texture_swizzling: bool,
-        dump_shader_source: Option<String>,
-        surface_origin_is_top_left: bool,
-        panic_on_gl_error: bool,
+        options: DeviceOptions,
     ) -> Device {
+        let DeviceOptions {
+            crash_annotator,
+            resource_override_path,
+            use_optimized_shaders,
+            upload_method,
+            batched_upload_threshold,
+            cached_programs,
+            allow_texture_storage_support,
+            allow_texture_swizzling,
+            dump_shader_source,
+            surface_origin_is_top_left,
+            panic_on_gl_error,
+        } = options;
         let mut max_texture_size = [0];
         unsafe {
             gl.get_integer_v(gl::MAX_TEXTURE_SIZE, &mut max_texture_size);
@@ -1857,7 +1880,7 @@ impl Device {
         // Some GPUs require the stride of the data during texture uploads to be
         // aligned to certain requirements, either for correctness or performance
         // reasons.
-        let required_pbo_stride = if is_adreno_3xx {
+        let required_transfer_stride = if is_adreno_3xx {
             // On Adreno 3xx, alignments of < 128 bytes can result in corrupted
             // glyphs. See bug 1696039.
             StrideAlignment::Bytes(NonZeroUsize::new(128).unwrap())
@@ -2108,7 +2131,7 @@ impl Device {
             requires_null_terminated_shader_source,
             requires_texture_external_unbind,
             is_software_webrender,
-            required_pbo_stride,
+            required_transfer_stride,
             dump_shader_source,
             surface_origin_is_top_left,
 
@@ -2263,8 +2286,8 @@ impl Device {
         return (self.max_depth_ids() - 1) as f32;
     }
 
-    pub fn required_pbo_stride(&self) -> StrideAlignment {
-        self.required_pbo_stride
+    pub fn required_transfer_stride(&self) -> StrideAlignment {
+        self.required_transfer_stride
     }
 
     pub fn upload_method(&self) -> &UploadMethod {
@@ -3371,16 +3394,16 @@ impl Device {
         }
     }
 
-    pub fn create_pbo(&mut self) -> PBO {
+    pub fn create_transfer_buffer(&mut self) -> TransferBuffer {
         let id = self.gl.gen_buffers(1)[0];
-        PBO {
+        TransferBuffer {
             id,
             reserved_size: 0,
         }
     }
 
-    pub fn create_pbo_with_size(&mut self, size: usize) -> PBO {
-        let mut pbo = self.create_pbo();
+    pub fn create_transfer_buffer_with_size(&mut self, size: usize) -> TransferBuffer {
+        let mut pbo = self.create_transfer_buffer();
 
         self.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, pbo.id);
         self.gl.pixel_store_i(gl::PACK_ALIGNMENT, 1);
@@ -3396,12 +3419,12 @@ impl Device {
         pbo
     }
 
-    pub fn read_pixels_into_pbo(
+    pub fn read_pixels_into_transfer_buffer(
         &mut self,
         read_target: ReadTarget,
         rect: DeviceIntRect,
         format: ImageFormat,
-        pbo: &PBO,
+        pbo: &TransferBuffer,
     ) {
         let byte_size = rect.area() as usize * format.bytes_per_pixel() as usize;
 
@@ -3428,7 +3451,7 @@ impl Device {
         self.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, 0);
     }
 
-    pub fn map_pbo_for_readback<'a>(&'a mut self, pbo: &'a PBO) -> Option<BoundPBO<'a>> {
+    pub fn map_transfer_buffer<'a>(&'a mut self, pbo: &'a TransferBuffer) -> Option<MappedTransferBuffer<'a>> {
         self.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, pbo.id);
 
         let buf_ptr = match self.gl.get_type() {
@@ -3451,13 +3474,13 @@ impl Device {
 
         let buffer = unsafe { slice::from_raw_parts(buf_ptr as *const u8, pbo.reserved_size) };
 
-        Some(BoundPBO {
+        Some(MappedTransferBuffer {
             device: self,
             data: buffer,
         })
     }
 
-    pub fn delete_pbo(&mut self, mut pbo: PBO) {
+    pub fn delete_transfer_buffer(&mut self, mut pbo: TransferBuffer) {
         self.gl.delete_buffers(&[pbo.id]);
         pbo.id = 0;
         pbo.reserved_size = 0
@@ -3472,7 +3495,7 @@ impl Device {
         let bytes_pp = format.bytes_per_pixel() as usize;
         let width_bytes = size.width as usize * bytes_pp;
 
-        let dst_stride = round_up_to_multiple(width_bytes, self.required_pbo_stride.num_bytes(format));
+        let dst_stride = round_up_to_multiple(width_bytes, self.required_transfer_stride.num_bytes(format));
 
         // The size of the chunk should only need to be (height - 1) * dst_stride + width_bytes,
         // however, the android emulator will error unless it is height * dst_stride.
@@ -3488,7 +3511,7 @@ impl Device {
     /// Once uploads have been performed the uploader must be flushed with `TextureUploader::flush()`.
     pub fn upload_texture<'a>(
         &mut self,
-        pbo_pool: &'a mut UploadPBOPool,
+        pbo_pool: &'a mut UploadBufferPool,
     ) -> TextureUploader<'a> {
         debug_assert!(self.inside_frame);
 
@@ -4450,17 +4473,17 @@ enum PBOMapping {
 impl PBOMapping {
     fn get_ptr(&self) -> ptr::NonNull<mem::MaybeUninit<u8>> {
         match self {
-            PBOMapping::Unmapped => unreachable!("Cannot get pointer to unmapped PBO."),
+            PBOMapping::Unmapped => unreachable!("Cannot get pointer to unmapped TransferBuffer."),
             PBOMapping::Transient(ptr) => *ptr,
             PBOMapping::Persistent(ptr) => *ptr,
         }
     }
 }
 
-/// A PBO for uploading texture data, managed by UploadPBOPool.
+/// A TransferBuffer for uploading texture data, managed by UploadBufferPool.
 #[derive(Debug)]
 struct UploadPBO {
-    pbo: PBO,
+    pbo: TransferBuffer,
     mapping: PBOMapping,
     can_recycle: bool,
 }
@@ -4468,7 +4491,7 @@ struct UploadPBO {
 impl UploadPBO {
     fn empty() -> Self {
         Self {
-            pbo: PBO {
+            pbo: TransferBuffer {
                 id: 0,
                 reserved_size: 0,
             },
@@ -4481,7 +4504,7 @@ impl UploadPBO {
 /// Allocates and recycles PBOs used for uploading texture data.
 /// Tries to allocate and recycle PBOs of a fixed size, but will make exceptions when
 /// a larger buffer is required or to work around driver bugs.
-pub struct UploadPBOPool {
+pub struct UploadBufferPool {
     /// Usage hint to provide to the driver for optimizations.
     usage_hint: VertexUsageHint,
     /// The preferred size, in bytes, of the buffers to allocate.
@@ -4496,10 +4519,10 @@ pub struct UploadPBOPool {
     waiting_buffers: Vec<(gl::GLsync, Vec<UploadPBO>)>,
     /// PBOs which have been orphaned.
     /// We can recycle their IDs but must reallocate their storage.
-    orphaned_buffers: Vec<PBO>,
+    orphaned_buffers: Vec<TransferBuffer>,
 }
 
-impl UploadPBOPool {
+impl UploadBufferPool {
     pub fn new(device: &mut Device, default_size: usize) -> Self {
         let usage_hint = match device.upload_method {
             UploadMethod::Immediate => VertexUsageHint::Stream,
@@ -4533,9 +4556,9 @@ impl UploadPBOPool {
                     self.available_buffers.extend(buffers.drain(..));
                 }
                 gl::WAIT_FAILED | _ => {
-                    warn!("glClientWaitSync error in UploadPBOPool::begin_frame()");
+                    warn!("glClientWaitSync error in UploadBufferPool::begin_frame()");
                     for buffer in buffers.drain(..) {
-                        device.delete_pbo(buffer.pbo);
+                        device.delete_transfer_buffer(buffer.pbo);
                     }
                 }
             }
@@ -4555,10 +4578,10 @@ impl UploadPBOPool {
             if !sync.is_null() {
                 self.waiting_buffers.push((sync, mem::replace(&mut self.returned_buffers, Vec::new())))
             } else {
-                warn!("glFenceSync error in UploadPBOPool::end_frame()");
+                warn!("glFenceSync error in UploadBufferPool::end_frame()");
 
                 for buffer in self.returned_buffers.drain(..) {
-                    device.delete_pbo(buffer.pbo);
+                    device.delete_transfer_buffer(buffer.pbo);
                 }
             }
         }
@@ -4598,7 +4621,7 @@ impl UploadPBOPool {
                         ) as *mut _;
 
                         let ptr = ptr::NonNull::new(ptr).ok_or_else(
-                            || format!("Failed to transiently map PBO of size {} bytes", buffer.pbo.reserved_size)
+                            || format!("Failed to transiently map TransferBuffer of size {} bytes", buffer.pbo.reserved_size)
                         )?;
 
                         buffer.mapping = PBOMapping::Transient(ptr);
@@ -4618,7 +4641,7 @@ impl UploadPBOPool {
         // If there are none available, create a new PBO.
         let mut pbo = match self.orphaned_buffers.pop() {
             Some(pbo) => pbo,
-            None => device.create_pbo(),
+            None => device.create_transfer_buffer(),
         };
 
         assert_eq!(pbo.reserved_size, 0);
@@ -4643,7 +4666,7 @@ impl UploadPBOPool {
             ) as *mut _;
 
             let ptr = ptr::NonNull::new(ptr).ok_or_else(
-                || format!("Failed to transiently map PBO of size {} bytes", pbo.reserved_size)
+                || format!("Failed to transiently map TransferBuffer of size {} bytes", pbo.reserved_size)
             )?;
 
             PBOMapping::Persistent(ptr)
@@ -4664,7 +4687,7 @@ impl UploadPBOPool {
             ) as *mut _;
 
             let ptr = ptr::NonNull::new(ptr).ok_or_else(
-                || format!("Failed to transiently map PBO of size {} bytes", pbo.reserved_size)
+                || format!("Failed to transiently map TransferBuffer of size {} bytes", pbo.reserved_size)
             )?;
 
             PBOMapping::Transient(ptr)
@@ -4701,15 +4724,15 @@ impl UploadPBOPool {
     /// Frees all allocated buffers in response to a memory pressure event.
     pub fn on_memory_pressure(&mut self, device: &mut Device) {
         for buffer in self.available_buffers.drain(..) {
-            device.delete_pbo(buffer.pbo);
+            device.delete_transfer_buffer(buffer.pbo);
         }
         for buffer in self.returned_buffers.drain(..) {
-            device.delete_pbo(buffer.pbo)
+            device.delete_transfer_buffer(buffer.pbo)
         }
         for (sync, buffers) in self.waiting_buffers.drain(..) {
             device.gl.delete_sync(sync);
             for buffer in buffers {
-                device.delete_pbo(buffer.pbo)
+                device.delete_transfer_buffer(buffer.pbo)
             }
         }
         // There is no need to delete orphaned PBOs on memory pressure.
@@ -4734,19 +4757,19 @@ impl UploadPBOPool {
 
     pub fn deinit(&mut self, device: &mut Device) {
         for buffer in self.available_buffers.drain(..) {
-            device.delete_pbo(buffer.pbo);
+            device.delete_transfer_buffer(buffer.pbo);
         }
         for buffer in self.returned_buffers.drain(..) {
-            device.delete_pbo(buffer.pbo)
+            device.delete_transfer_buffer(buffer.pbo)
         }
         for (sync, buffers) in self.waiting_buffers.drain(..) {
             device.gl.delete_sync(sync);
             for buffer in buffers {
-                device.delete_pbo(buffer.pbo)
+                device.delete_transfer_buffer(buffer.pbo)
             }
         }
         for pbo in self.orphaned_buffers.drain(..) {
-            device.delete_pbo(pbo);
+            device.delete_transfer_buffer(pbo);
         }
     }
 }
@@ -4758,7 +4781,7 @@ pub struct TextureUploader<'a> {
     /// A list of buffers containing uploads that need to be flushed.
     buffers: Vec<PixelBuffer<'a>>,
     /// Pool used to obtain PBOs to fill with texture data.
-    pub pbo_pool: &'a mut UploadPBOPool,
+    pub pbo_pool: &'a mut UploadBufferPool,
 }
 
 impl<'a> Drop for TextureUploader<'a> {
@@ -4824,7 +4847,7 @@ impl<'a> TextureUploader<'a> {
         };
 
         if !device.capabilities.supports_nonzero_pbo_offsets {
-            assert_eq!(buffer.size_used, 0, "PBO uploads from non-zero offset are not supported.");
+            assert_eq!(buffer.size_used, 0, "TransferBuffer uploads from non-zero offset are not supported.");
         }
         assert!(buffer.size_used + dst_size <= buffer.inner.pbo.reserved_size, "PixelBuffer is too small");
 
@@ -4955,7 +4978,7 @@ impl<'a> TextureUploader<'a> {
         }
     }
 
-    fn flush_buffer(device: &mut Device, pbo_pool: &mut UploadPBOPool, mut buffer: PixelBuffer) {
+    fn flush_buffer(device: &mut Device, pbo_pool: &mut UploadBufferPool, mut buffer: PixelBuffer) {
         device.gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, buffer.inner.pbo.id);
         match buffer.inner.mapping {
             PBOMapping::Unmapped => unreachable!("UploadPBO should be mapped at this stage."),

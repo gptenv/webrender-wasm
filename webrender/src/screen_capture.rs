@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use api::{ImageFormat, ImageBufferKind};
 use api::units::*;
 
-use crate::device::{Device, PBO, DrawTarget, ReadTarget, Texture, TextureFilter};
+use crate::device::{Device, TransferBuffer, DrawTarget, ReadTarget, Texture, TextureFilter};
 use crate::internal_types::RenderTargetInfo;
 use crate::renderer::Renderer;
 use crate::util::round_up_to_multiple;
@@ -27,7 +27,7 @@ pub struct RecordedFrameHandle(usize);
 /// An asynchronously captured screenshot bound to a PBO which has not yet been mapped for copying.
 struct AsyncScreenshot {
     /// The PBO that will contain the screenshot data.
-    pbo: PBO,
+    pbo: TransferBuffer,
     /// The size of the screenshot.
     screenshot_size: DeviceIntSize,
     /// The stride of the data in the PBO.
@@ -56,7 +56,7 @@ pub(in crate) struct AsyncScreenshotGrabber {
     /// The textures used to scale screenshots.
     scaling_textures: Vec<Texture>,
     /// PBOs available to be used for screenshot readback.
-    available_pbos: Vec<PBO>,
+    available_pbos: Vec<TransferBuffer>,
     /// PBOs containing screenshots that are awaiting readback.
     awaiting_readback: HashMap<AsyncScreenshotHandle, AsyncScreenshot>,
     /// The handle for the net PBO that will be inserted into `in_use_pbos`.
@@ -93,11 +93,11 @@ impl AsyncScreenshotGrabber {
         }
 
         for pbo in self.available_pbos {
-            device.delete_pbo(pbo);
+            device.delete_transfer_buffer(pbo);
         }
 
         for (_, async_screenshot) in self.awaiting_readback {
-            device.delete_pbo(async_screenshot.pbo);
+            device.delete_transfer_buffer(async_screenshot.pbo);
         }
     }
 
@@ -144,7 +144,7 @@ impl AsyncScreenshotGrabber {
         let read_size = match self.mode {
             AsyncScreenshotGrabberMode::ProfilerScreenshots => {
                 let stride = (screenshot_size.width * image_format.bytes_per_pixel()) as usize;
-                let rounded = round_up_to_multiple(stride, device.required_pbo_stride().num_bytes(image_format));
+                let rounded = round_up_to_multiple(stride, device.required_transfer_stride().num_bytes(image_format));
                 let optimal_width = rounded as i32 / image_format.bytes_per_pixel();
 
                 DeviceIntSize::new(
@@ -161,14 +161,14 @@ impl AsyncScreenshotGrabber {
             let mut reusable_pbo = None;
             while let Some(pbo) = self.available_pbos.pop() {
                 if pbo.get_reserved_size() != required_size {
-                    device.delete_pbo(pbo);
+                    device.delete_transfer_buffer(pbo);
                 } else {
                     reusable_pbo = Some(pbo);
                     break;
                 }
             };
 
-            reusable_pbo.unwrap_or_else(|| device.create_pbo_with_size(required_size))
+            reusable_pbo.unwrap_or_else(|| device.create_transfer_buffer_with_size(required_size))
         };
         assert_eq!(pbo.get_reserved_size(), required_size);
 
@@ -191,7 +191,7 @@ impl AsyncScreenshotGrabber {
             AsyncScreenshotGrabberMode::CompositionRecorder => ReadTarget::Default,
         };
 
-        device.read_pixels_into_pbo(
+        device.read_pixels_into_transfer_buffer(
             read_target,
             DeviceIntRect::from_size(read_size),
             image_format,
@@ -353,7 +353,7 @@ impl AsyncScreenshotGrabber {
 
         let readback_rows_top_down = device.get_capabilities().readback_rows_top_down;
 
-        let success = if let Some(bound_pbo) = device.map_pbo_for_readback(&pbo) {
+        let success = if let Some(bound_pbo) = device.map_transfer_buffer(&pbo) {
             let src_buffer = &bound_pbo.data;
             let src_stride = buffer_stride;
             let src_width =
@@ -386,7 +386,7 @@ impl AsyncScreenshotGrabber {
 
         match self.mode {
             AsyncScreenshotGrabberMode::ProfilerScreenshots => self.available_pbos.push(pbo),
-            AsyncScreenshotGrabberMode::CompositionRecorder => device.delete_pbo(pbo),
+            AsyncScreenshotGrabberMode::CompositionRecorder => device.delete_transfer_buffer(pbo),
         }
 
         success

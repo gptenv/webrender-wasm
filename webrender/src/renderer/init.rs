@@ -15,7 +15,7 @@ use crate::render_backend_pool::{PoolMemberSetup, RenderBackendPool};
 use crate::scene_builder_thread::SceneBuilderRequest;
 use crate::composite::{CompositorKind, CompositorConfig};
 use crate::device::{
-    UploadMethod, UploadPBOPool, VertexUsageHint, Device, ProgramCache, TextureFilter
+    DeviceOptions, UploadMethod, UploadBufferPool, VertexUsageHint, Device, ProgramCache, TextureFilter
 };
 use crate::frame_builder::FrameBuilderConfig;
 use glyph_rasterizer::{GlyphRasterThread, SharedFontResources};
@@ -140,7 +140,7 @@ pub struct WebRenderOptions {
     pub image_tiling_threshold: i32,
     pub upload_method: UploadMethod,
     /// The default size in bytes for PBOs used to upload texture data.
-    pub upload_pbo_default_size: usize,
+    pub upload_buffer_default_size: usize,
     pub batched_upload_threshold: i32,
     pub workers: Option<Arc<ThreadPool>>,
     /// A pool of large memory chunks used by the per-frame allocators.
@@ -262,7 +262,7 @@ impl Default for WebRenderOptions {
             // This is best as `Immediate` on Angle, or `Pixelbuffer(Dynamic)` on GL,
             // but we are unable to make this decision here, so picking the reasonable medium.
             upload_method: UploadMethod::PixelBuffer(ONE_TIME_USAGE_HINT),
-            upload_pbo_default_size: 512 * 512 * 4,
+            upload_buffer_default_size: 512 * 512 * 4,
             batched_upload_threshold: 512 * 512,
             workers: None,
             chunk_pool: None,
@@ -362,17 +362,19 @@ pub fn create_webrender_instance(
 
     let mut device = Device::new(
         gl,
-        options.crash_annotator.clone(),
-        options.resource_override_path.clone(),
-        options.use_optimized_shaders,
-        options.upload_method.clone(),
-        options.batched_upload_threshold,
-        options.cached_programs.take(),
-        options.allow_texture_storage_support,
-        options.allow_texture_swizzling,
-        options.dump_shader_source.take(),
-        options.surface_origin_is_top_left,
-        options.panic_on_gl_error,
+        DeviceOptions {
+            crash_annotator: options.crash_annotator.clone(),
+            resource_override_path: options.resource_override_path.clone(),
+            use_optimized_shaders: options.use_optimized_shaders,
+            upload_method: options.upload_method.clone(),
+            batched_upload_threshold: options.batched_upload_threshold,
+            cached_programs: options.cached_programs.take(),
+            allow_texture_storage_support: options.allow_texture_storage_support,
+            allow_texture_swizzling: options.allow_texture_swizzling,
+            dump_shader_source: options.dump_shader_source.take(),
+            surface_origin_is_top_left: options.surface_origin_is_top_left,
+            panic_on_gl_error: options.panic_on_gl_error,
+        },
     );
 
     let color_cache_formats = device.preferred_color_formats();
@@ -529,7 +531,7 @@ pub fn create_webrender_instance(
         use_shared_instance_buffer,
     );
 
-    let texture_upload_pbo_pool = UploadPBOPool::new(&mut device, options.upload_pbo_default_size);
+    let texture_upload_buffer_pool = UploadBufferPool::new(&mut device, options.upload_buffer_default_size);
     let staging_texture_pool = UploadTexturePool::new();
     let texture_resolver = TextureResolver::new(&mut device);
 
@@ -788,7 +790,7 @@ pub fn create_webrender_instance(
         size_of_ops: make_size_of_ops(),
         cpu_profiles: VecDeque::new(),
         gpu_profiles: VecDeque::new(),
-        texture_upload_pbo_pool,
+        texture_upload_buffer_pool,
         staging_texture_pool,
         texture_resolver,
         renderer_errors: Vec::new(),

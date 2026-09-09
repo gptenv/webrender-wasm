@@ -59,7 +59,7 @@ use crate::composite::{CompositorConfig, NativeSurfaceOperationDetails, NativeSu
 #[cfg(feature = "debugger")]
 use api::debugger::{CompositorDebugInfo, DebuggerTextureContent};
 use crate::debug_colors;
-use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, GraphicsApiInfo, UploadPBOPool};
+use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, GraphicsApiInfo, UploadBufferPool};
 use crate::device::{LoadOp, ReadTarget, RenderPassDescriptor, ShaderError, StoreOp, Texture, TextureFilter, TextureFlags, TextureSlot, Texel};
 use crate::device::query::{GpuSampler, GpuTimer};
 use crate::debug_item::DebugItem;
@@ -739,7 +739,7 @@ pub struct Renderer {
     // Manages and resolves source textures IDs to real texture IDs.
     texture_resolver: TextureResolver,
 
-    texture_upload_pbo_pool: UploadPBOPool,
+    texture_upload_buffer_pool: UploadBufferPool,
     staging_texture_pool: UploadTexturePool,
 
     dither_matrix_texture: Option<Texture>,
@@ -885,7 +885,7 @@ impl Renderer {
     }
 
     pub fn required_texture_stride_alignment(&self, format: ImageFormat) -> usize {
-        self.device.required_pbo_stride().num_bytes(format).get()
+        self.device.required_transfer_stride().num_bytes(format).get()
     }
 
     pub fn set_clear_color(&mut self, color: ColorF) {
@@ -1257,7 +1257,7 @@ impl Renderer {
     }
 
     fn trim_upload_buffers(&mut self) {
-        self.texture_upload_pbo_pool.on_memory_pressure(&mut self.device);
+        self.texture_upload_buffer_pool.on_memory_pressure(&mut self.device);
         self.staging_texture_pool.delete_textures(&mut self.device);
         if let Some(texture) = self.gpu_buffer_texture_f.take() {
             self.device.delete_texture(texture);
@@ -1763,7 +1763,7 @@ impl Renderer {
         }
 
         self.staging_texture_pool.end_frame(&mut self.device);
-        self.texture_upload_pbo_pool.end_frame(&mut self.device);
+        self.texture_upload_buffer_pool.end_frame(&mut self.device);
         self.device.end_frame();
 
         if debug_overlay.is_some() {
@@ -3549,7 +3549,7 @@ impl Renderer {
 
         self.vertex_data_textures[self.current_vertex_data_textures].update(
             &mut self.device,
-            &mut self.texture_upload_pbo_pool,
+            &mut self.texture_upload_buffer_pool,
             frame,
         );
         self.current_vertex_data_textures =
@@ -3628,7 +3628,7 @@ impl Renderer {
         device: &mut Device,
         buffer: &GpuBuffer<T>,
         dst_texture: &mut Option<Texture>,
-        pbo_pool: &mut UploadPBOPool,
+        pbo_pool: &mut UploadBufferPool,
     ) {
         if buffer.is_empty() {
             return;
@@ -3723,13 +3723,13 @@ impl Renderer {
                 &mut self.device,
                 &frame.gpu_buffer_f,
                 &mut self.gpu_buffer_texture_f,
-                &mut self.texture_upload_pbo_pool,
+                &mut self.texture_upload_buffer_pool,
             );
             Self::update_gpu_buffer_texture(
                 &mut self.device,
                 &frame.gpu_buffer_i,
                 &mut self.gpu_buffer_texture_i,
-                &mut self.texture_upload_pbo_pool,
+                &mut self.texture_upload_buffer_pool,
             );
         }
 
@@ -4033,7 +4033,7 @@ impl Renderer {
         for textures in self.vertex_data_textures.drain(..) {
             textures.deinit(&mut self.device);
         }
-        self.texture_upload_pbo_pool.deinit(&mut self.device);
+        self.texture_upload_buffer_pool.deinit(&mut self.device);
         self.staging_texture_pool.delete_textures(&mut self.device);
         self.texture_resolver.deinit(&mut self.device);
         self.vaos.deinit(&mut self.device);
@@ -4080,8 +4080,8 @@ impl Renderer {
         // Texture cache and render target GPU memory.
         report += self.texture_resolver.report_memory();
 
-        // Texture upload PBO memory.
-        report += self.texture_upload_pbo_pool.report_memory();
+        // Texture upload buffer memory.
+        report += self.texture_upload_buffer_pool.report_memory();
 
         // Textures held internally within the device layer.
         report += self.device.report_memory(self.size_of_ops.as_ref().unwrap(), swgl);
