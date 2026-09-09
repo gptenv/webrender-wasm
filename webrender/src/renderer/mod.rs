@@ -1140,14 +1140,9 @@ impl Renderer {
                 panic!("Should be handled by render backend");
             }
             #[cfg(feature = "debugger")]
-            DebugCommand::SetSceneDebugOverride(..) => {
-                panic!("Should be handled by render backend");
-            }
-            #[cfg(feature = "debugger")]
             DebugCommand::Query(ref query) => {
                 match query.kind {
-                    DebugQueryKind::SpatialTree { .. } |
-                    DebugQueryKind::Scene { .. } => {
+                    DebugQueryKind::SpatialTree { .. } => {
                         panic!("Should be handled by render backend");
                     }
                     DebugQueryKind::CompositorConfig { .. } => {
