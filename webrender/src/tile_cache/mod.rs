@@ -1127,6 +1127,14 @@ impl TileCacheInstance {
                 ClipSnap::Exact
             };
 
+            // A tile-cache leaf carries `max_rect`, so this passes through
+            // unsnapped whatever `clip_snapper` currently targets.
+            let snapped_leaf_clip_rect = frame_state.clip_tree.snap_leaf_clip_rect(
+                shared_clip_leaf_id,
+                &clip_snapper,
+                clip_snap,
+            );
+
             frame_state.clip_store.set_active_clips(
                 self.spatial_node_index,
                 map_local_to_picture.ref_spatial_node_index,
@@ -1134,6 +1142,7 @@ impl TileCacheInstance {
                 &mut clip_snapper,
                 clip_snap,
                 shared_clip_leaf_id,
+                snapped_leaf_clip_rect,
                 frame_context.spatial_tree,
                 &frame_state.data_stores.clip,
                 &frame_state.clip_tree,
