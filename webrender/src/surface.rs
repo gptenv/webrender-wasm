@@ -130,31 +130,21 @@ fn resolve_dest_to_src_raster(
 /// node, so a surface's culling rect and every primitive or clip rect projected
 /// for a culling decision must be built against the same node.
 ///
-/// A snapping surface - a tile cache, or a surface that rasterizes against the
-/// root - uses its own raster node, so its content is culled against a region of
-/// the render target it is drawn into rather than a region of the screen. For a
-/// surface rasterizing against the root the two are the same node, so only tile
-/// caches actually move.
+/// This is the surface's raster node, so content is culled against the region of
+/// the render target it is drawn into rather than a region of the screen. A
+/// primitive's relationship to that node is usually a plain 2D scale and offset
+/// even when its relationship to the screen is not: a raster root established for
+/// a preserve-3d or perspective subtree sits inside the transform that makes the
+/// screen-relative mapping hard.
 ///
-/// A non-snapping raster root (preserve-3d, perspective, `RasterSpace::Local`,
-/// huge scale) still uses the root. Its raster node can be inside a 3D context,
-/// where the screen has no axis-aligned pre-image and the culling rect would have
-/// to degrade to "cull nothing"; moving those is the remaining step of the
-/// migration described in `plan-wr-culling-in-raster-space.md`.
-///
-/// This is the one place that decides.
+/// The cost is that visibility space need not be axis-aligned with the screen any
+/// more, so the culling rect may have no exact pre-image; see `culling_rect`.
 pub fn visibility_node(
     raster_spatial_node_index: SpatialNodeIndex,
-    allow_snapping: bool,
-    spatial_tree: &SpatialTree,
 ) -> SpatialNodeIndex {
     debug_assert_ne!(raster_spatial_node_index, SpatialNodeIndex::INVALID);
 
-    if allow_snapping {
-        raster_spatial_node_index
-    } else {
-        spatial_tree.root_reference_frame_index()
-    }
+    raster_spatial_node_index
 }
 
 /// The mapping between a vis node's space and the screen framebuffer's device
@@ -336,8 +326,7 @@ impl SurfaceInfo {
             pic_bounds,
         );
 
-        let visibility_spatial_node_index =
-            visibility_node(raster_spatial_node_index, allow_snapping, spatial_tree);
+        let visibility_spatial_node_index = visibility_node(raster_spatial_node_index);
 
         // The culling rect is the screen, expressed in vis space.
         let map_vis_to_root = vis_to_root_mapper(
@@ -346,21 +335,25 @@ impl SurfaceInfo {
             spatial_tree,
         );
 
+        // A vis node in the root coordinate system always gives a scale+offset,
+        // so the guard only bites for a raster root established inside a 3D
+        // context - where the answer is to cull nothing.
+        let projected = map_vis_to_root
+            .as_2d_scale_offset()
+            .and_then(|_| map_vis_to_root.unmap(&global_culling_rect));
+
         let mut culling_rect_projection_failed = false;
-        let culling_rect = match map_vis_to_root.unmap(&global_culling_rect) {
+        let culling_rect = match projected {
             Some(rect) => rect,
             None => {
                 culling_rect_projection_failed = true;
                 // Cull nothing rather than everything; see `culling_rect`.
-                // Only reachable for a vis node outside the root coordinate
-                // system, where the screen rect need not have an axis-aligned
-                // pre-image.
                 debug_assert_ne!(
                     spatial_tree
                         .get_spatial_node(visibility_spatial_node_index)
                         .coordinate_system_id,
                     CoordinateSystemId::root(),
-                    "screen rect has no pre-image in an axis-aligned vis space",
+                    "vis node in the root coordinate system must give an exact culling rect",
                 );
                 VisRect::max_rect()
             }
@@ -371,8 +364,17 @@ impl SurfaceInfo {
         // space that lost part of the screen on the way in would cull content
         // that is genuinely visible - the failure mode that matters when the vis
         // node moves away from the root.
+        //
+        // Only checkable for a rect that came from a real projection. The
+        // `max_rect` fallback culls nothing by construction, and projecting it
+        // forward says nothing either way: `project_rect` clips against the near
+        // plane, so a near-plane-crossing transform maps `max_rect` to a bounded
+        // rect that need not cover the screen.
         #[cfg(debug_assertions)]
-        if let Some(round_trip) = map_vis_to_root.map(&culling_rect) {
+        if let Some(round_trip) = Some(&culling_rect)
+            .filter(|_| !culling_rect_projection_failed)
+            .and_then(|rect| map_vis_to_root.map(rect))
+        {
             const EPSILON: f32 = 0.05;
             debug_assert!(
                 round_trip.inflate(EPSILON, EPSILON).contains_box(&global_culling_rect),
