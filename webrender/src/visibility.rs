@@ -288,11 +288,11 @@ pub fn update_prim_visibility(
     frame_state: &mut FrameVisibilityState,
     tile_cache: &mut Option<&mut TileCacheInstance>,
  ) {
-    if frame_state.visited_pictures[pic_index.0] {
+    if frame_state.visited_pictures[pic_index.0 as usize] {
         return;
     }
-    frame_state.visited_pictures[pic_index.0] = true;
-    let pic = &store.pictures[pic_index.0];
+    frame_state.visited_pictures[pic_index.0 as usize] = true;
+    let pic = &store.pictures[pic_index.0 as usize];
 
     let (surface_index, pop_surface) = match pic.raster_config {
         Some(RasterConfig { surface_index, composite_mode: PictureCompositeMode::TileCache { .. }, .. }) => {
@@ -436,18 +436,18 @@ pub fn update_prim_visibility(
             );
 
             if let PrimitiveKind::Picture { pic_index, .. } = frame_state.prim_instances[prim_instance_index].kind {
-                if !store.pictures[pic_index.0].is_visible(frame_context.spatial_tree) {
+                if !store.pictures[pic_index.0 as usize].is_visible(frame_context.spatial_tree) {
                     continue;
                 }
 
-                let is_passthrough = match store.pictures[pic_index.0].raster_config {
+                let is_passthrough = match store.pictures[pic_index.0 as usize].raster_config {
                     Some(..) => false,
                     None => true,
                 };
 
                 if !is_passthrough {
                     let clip_root = store
-                        .pictures[pic_index.0]
+                        .pictures[pic_index.0 as usize]
                         .clip_root
                         .unwrap_or_else(|| {
                             // If we couldn't find a common ancestor then just use the
@@ -536,7 +536,7 @@ pub fn update_prim_visibility(
 
             let is_mix_blend_picture = |prim_instance: &PrimitiveInstance| {
                 if let PrimitiveKind::Picture { pic_index, .. } = prim_instance.kind {
-                    let pic = &store.pictures[pic_index.0];
+                    let pic = &store.pictures[pic_index.0 as usize];
 
                     matches!(
                         pic.composite_mode,

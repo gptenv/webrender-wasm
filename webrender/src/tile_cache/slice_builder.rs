@@ -691,7 +691,7 @@ fn create_tile_cache(
         None,
     ));
 
-    tile_cache_pictures.push(PictureIndex(pic_index));
+    tile_cache_pictures.push(PictureIndex(pic_index as u32));
 }
 
 /// Debug information about a set of picture cache slices, exposed via RenderResults

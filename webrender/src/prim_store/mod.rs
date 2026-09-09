@@ -98,10 +98,10 @@ impl ClipTaskIndex {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, MallocSizeOf, Ord, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct PictureIndex(pub usize);
+pub struct PictureIndex(pub u32);
 
 impl PictureIndex {
-    pub const INVALID: PictureIndex = PictureIndex(!0);
+    pub const INVALID: PictureIndex = PictureIndex(u32::MAX);
 }
 
 // `PolygonKey` now lives in `webrender_api` so builder-side interning keys can
@@ -838,7 +838,7 @@ impl PrimitiveStore {
     pub fn print_picture_tree(&self, root: PictureIndex) {
         use crate::print_tree::PrintTree;
         let mut pt = PrintTree::new("picture tree");
-        self.pictures[root.0].print(&self.pictures, root, &mut pt);
+        self.pictures[root.0 as usize].print(&self.pictures, root, &mut pt);
     }
 }
 
@@ -908,7 +908,7 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<PrimitiveInstance>(), 32, "PrimitiveInstance size changed");
-    assert_eq!(mem::size_of::<PrimitiveKind>(), 24, "PrimitiveKind size changed");
+    assert_eq!(mem::size_of::<PrimitiveInstance>(), 24, "PrimitiveInstance size changed");
+    assert_eq!(mem::size_of::<PrimitiveKind>(), 16, "PrimitiveKind size changed");
 }
 

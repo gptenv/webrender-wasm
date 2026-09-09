@@ -173,7 +173,7 @@ impl DataStores {
     ) -> LayoutRect {
         match prim_instance.kind {
             PrimitiveKind::Picture { pic_index, .. } => {
-                let pic = &pictures[pic_index.0];
+                let pic = &pictures[pic_index.0 as usize];
 
                 match pic.raster_config {
                     Some(RasterConfig { surface_index, ref composite_mode, .. }) => {
@@ -203,7 +203,7 @@ impl DataStores {
     ) -> LayoutRect {
         match prim_instance.kind {
             PrimitiveKind::Picture { pic_index, .. } => {
-                let pic = &pictures[pic_index.0];
+                let pic = &pictures[pic_index.0 as usize];
 
                 match pic.raster_config {
                     Some(RasterConfig { surface_index, ref composite_mode, .. }) => {
