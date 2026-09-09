@@ -60,6 +60,7 @@ use crate::resource_cache::PlainResources;
 use crate::scene::Scene;
 use crate::scene::{BuiltScene, SceneProperties};
 use crate::scene_builder_thread::*;
+use crate::scene_debug::SceneDebugOverride;
 use crate::spatial_tree::SpatialTree;
 #[cfg(feature = "replay")]
 use crate::spatial_tree::SceneSpatialTree;
@@ -412,6 +413,14 @@ struct Document {
 
     profile: TransactionProfile,
     frame_stats: Option<FullFrameStats>,
+
+    /// Incremented each time a new built scene is swapped in. Lets the remote
+    /// debugger detect that primitive indices it holds are stale.
+    scene_generation: u64,
+
+    /// Debug-only per-primitive modifications applied during frame building.
+    /// Reset whenever a new built scene is swapped in.
+    debug_override: SceneDebugOverride,
 }
 
 impl Document {
@@ -449,6 +458,8 @@ impl Document {
             profile: TransactionProfile::new(),
             rg_builder: RenderTaskGraphBuilder::new(),
             frame_stats: None,
+            scene_generation: 0,
+            debug_override: SceneDebugOverride::empty(),
         }
     }
 
@@ -555,6 +566,7 @@ impl Document {
                 &mut self.data_stores,
                 &mut self.scratch,
                 debug_flags,
+                &self.debug_override,
                 tile_caches,
                 &mut self.spatial_tree,
                 self.dirty_rects_are_valid,
@@ -637,6 +649,7 @@ impl Document {
             &self.data_stores,
             &mut self.scratch,
             debug_flags,
+            &SceneDebugOverride::empty(),
             &mut tile_caches,
             &mut spatial_tree,
             self.dirty_rects_are_valid,
@@ -757,6 +770,40 @@ impl Document {
         old_scene.recycle();
 
         self.scratch.recycle(recycler);
+
+        self.scene_generation += 1;
+        self.debug_override = SceneDebugOverride::empty();
+    }
+
+    /// Serialize the picture / primitive tree of the current built scene for
+    /// the remote debugger.
+    #[cfg(feature = "debugger")]
+    fn scene_debug_tree(&self) -> api::debugger::SceneDebugTree {
+        crate::scene_debug::build_debug_tree(
+            &self.scene,
+            &self.data_stores,
+            &self.spatial_tree,
+            &self.scratch.primitive.frame,
+            &self.dynamic_properties,
+            self.view.scene.device_rect.to_f32(),
+            self.scene_generation,
+        )
+    }
+
+    /// Install a debug override sent by the remote debugger, rejecting it if
+    /// it targets a scene generation other than the current one.
+    #[cfg(feature = "debugger")]
+    fn set_debug_override(
+        &mut self,
+        debug_override: &api::debugger::SceneDebugOverride,
+    ) -> Result<(), String> {
+        self.debug_override = SceneDebugOverride::from_debugger(
+            debug_override,
+            self.scene_generation,
+            self.scene.prim_instances.len(),
+        )?;
+        self.frame_is_valid = false;
+        Ok(())
     }
 }
 
@@ -1557,6 +1604,16 @@ impl RenderBackend {
                                 }
                                 return RenderBackendStatus::Continue;
                             }
+                            DebugQueryKind::Scene { .. } => {
+                                if let Some(doc_id) = self.documents_for_window(backend_id).first() {
+                                    if let Some(doc) = self.documents.get(doc_id) {
+                                        let tree = doc.scene_debug_tree();
+                                        let result = serde_json::to_string(&tree).expect("bug");
+                                        query.result.send(result).ok();
+                                    }
+                                }
+                                return RenderBackendStatus::Continue;
+                            }
                             DebugQueryKind::CompositorView { .. } |
                             DebugQueryKind::CompositorConfig { .. } |
                             DebugQueryKind::Textures { .. } => {
@@ -1612,6 +1669,17 @@ impl RenderBackend {
                     }
                     DebugCommand::SimulateLongSceneBuild(time_ms) => {
                         let _ = self.scene_tx.send(SceneBuilderRequest::SimulateLongSceneBuild(time_ms));
+                        return RenderBackendStatus::Continue;
+                    }
+                    #[cfg(feature = "debugger")]
+                    DebugCommand::SetSceneDebugOverride(ref debug_override, ref tx) => {
+                        let mut result = Err("No document".to_string());
+                        if let Some(doc_id) = self.documents_for_window(backend_id).first() {
+                            if let Some(doc) = self.documents.get_mut(doc_id) {
+                                result = doc.set_debug_override(debug_override);
+                            }
+                        }
+                        tx.send(result).ok();
                         return RenderBackendStatus::Continue;
                     }
                     DebugCommand::SetFlags(flags) => {
@@ -2503,6 +2571,8 @@ impl RenderBackend {
                         profile: TransactionProfile::new(),
                         rg_builder: RenderTaskGraphBuilder::new(),
                         frame_stats: None,
+                        scene_generation: 0,
+                        debug_override: SceneDebugOverride::empty(),
                     };
                     entry.insert(doc);
                 }

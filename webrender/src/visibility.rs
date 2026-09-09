@@ -54,6 +54,7 @@ use crate::render_backend::{DataStores, ScratchBuffer};
 use crate::render_task_graph::RenderTaskGraphBuilder;
 use crate::resource_cache::ResourceCache;
 use crate::scene::SceneProperties;
+use crate::scene_debug::SceneDebugOverride;
 use crate::space::{SpaceMapper, SpaceSnapper};
 use crate::util::MaxRect;
 
@@ -61,6 +62,7 @@ pub struct FrameVisibilityContext<'a> {
     pub spatial_tree: &'a SpatialTree,
     pub global_screen_device_rect: DeviceRect,
     pub debug_flags: DebugFlags,
+    pub debug_override: &'a SceneDebugOverride,
     pub scene_properties: &'a SceneProperties,
     pub config: FrameBuilderConfig,
     pub root_spatial_node_index: SpatialNodeIndex,
@@ -360,6 +362,13 @@ pub fn update_prim_visibility(
         snapper.set_target_spatial_node(cluster.spatial_node_index, frame_context.spatial_tree);
 
         for prim_instance_index in cluster.prim_range() {
+            // Primitives disabled by the debugger get no draw, which hides
+            // them (and, for pictures, their whole subtree) from every
+            // later pass.
+            if frame_context.debug_override.is_disabled(prim_instance_index) {
+                continue;
+            }
+
             // A prim's snap policy is folded into its clip leaf: device-space
             // prims (text) carry the `INVALID` sentinel and snap nothing - their
             // rect and clips stay at exact sub-pixel positions so the clip keeps

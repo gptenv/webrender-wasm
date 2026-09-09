@@ -36,6 +36,7 @@ use crate::render_task_graph::{RenderPass, RenderTaskGraphBuilder};
 use crate::render_task::{RenderTaskKind, StaticRenderTaskSurface};
 use crate::resource_cache::ResourceCache;
 use crate::scene::{BuiltScene, SceneProperties};
+use crate::scene_debug::SceneDebugOverride;
 use crate::space::SpaceMapper;
 use crate::surface::{SubpixelMode, SurfaceBuilder, SurfaceIndex, SurfaceInfo};
 use crate::transform::{TransformPalette, TransformData};
@@ -112,6 +113,7 @@ pub struct FrameBuildingContext<'a> {
     pub spatial_tree: &'a SpatialTree,
     pub max_local_clip: LayoutRect,
     pub debug_flags: DebugFlags,
+    pub debug_override: &'a SceneDebugOverride,
     pub fb_config: &'a FrameBuilderConfig,
     pub root_spatial_node_index: SpatialNodeIndex,
 }
@@ -273,6 +275,7 @@ impl FrameBuilder {
         data_stores: &DataStores,
         scratch: &mut ScratchBuffer,
         debug_flags: DebugFlags,
+        debug_override: &SceneDebugOverride,
         composite_state: &mut CompositeState,
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
         spatial_tree: &SpatialTree,
@@ -305,6 +308,7 @@ impl FrameBuilder {
                 max: LayoutPoint::new(MAX_CLIP_COORD, MAX_CLIP_COORD),
             },
             debug_flags,
+            debug_override,
             fb_config: &scene.config,
             root_spatial_node_index,
         };
@@ -377,6 +381,7 @@ impl FrameBuilder {
                 spatial_tree,
                 global_screen_device_rect,
                 debug_flags,
+                debug_override,
                 scene_properties,
                 config: scene.config,
                 root_spatial_node_index,
@@ -651,6 +656,7 @@ impl FrameBuilder {
         data_stores: &DataStores,
         scratch: &mut ScratchBuffer,
         debug_flags: DebugFlags,
+        debug_override: &SceneDebugOverride,
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
         spatial_tree: &mut SpatialTree,
         dirty_rects_are_valid: bool,
@@ -708,6 +714,7 @@ impl FrameBuilder {
             data_stores,
             scratch,
             debug_flags,
+            debug_override,
             &mut composite_state,
             tile_caches,
             spatial_tree,
