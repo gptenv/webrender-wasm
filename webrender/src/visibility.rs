@@ -452,8 +452,7 @@ pub fn update_prim_visibility(
                         .unwrap_or_else(|| {
                             // If we couldn't find a common ancestor then just use the
                             // clip node of the picture primitive itself
-                            let leaf_id = frame_state.prim_instances[prim_instance_index].clip_leaf_id;
-                            frame_state.clip_tree.get_leaf(leaf_id).node_id
+                            frame_state.prim_instances[prim_instance_index].clip_node_id
                         }
                     );
 
@@ -499,7 +498,7 @@ pub fn update_prim_visibility(
                 visibility_spatial_node_index,
                 &mut clip_snapper,
                 policy.clip,
-                prim_instance.clip_leaf_id,
+                prim_instance.clip_node_id,
                 clip_root,
                 snapped_leaf_clip_rect,
                 &frame_context.spatial_tree,

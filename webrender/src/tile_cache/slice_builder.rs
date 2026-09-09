@@ -337,8 +337,7 @@ impl TileCacheBuilder {
                                 // (a common case is parallax scrolling effects).
                                 let mut create_slice = true;
 
-                                let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
-                                let mut current_node_id = leaf.node_id;
+                                let mut current_node_id = prim_instance.clip_node_id;
 
                                 while current_node_id != ClipNodeId::NONE {
                                     let node = clip_tree_builder.get_node(current_node_id);
@@ -515,15 +514,15 @@ fn create_tile_cache(
 
     for cluster in &prim_list.clusters {
         for prim_instance in &prim_instances[cluster.prim_range()] {
-            let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
+            let node_id = prim_instance.clip_node_id;
 
             // TODO(gw): Need to cache last clip-node id here?
             shared_clip_node_id = match shared_clip_node_id {
                 Some(current) => {
-                    Some(clip_tree_builder.find_lowest_common_ancestor(current, leaf.node_id))
+                    Some(clip_tree_builder.find_lowest_common_ancestor(current, node_id))
                 }
                 None => {
-                    Some(leaf.node_id)
+                    Some(node_id)
                 }
             }
         }
@@ -644,7 +643,7 @@ fn create_tile_cache(
         current_node_id = node.parent;
     }
 
-    let shared_clip_leaf_id = Some(clip_tree_builder.build_for_tile_cache(
+    let tile_clip_node_id = Some(clip_tree_builder.build_for_tile_cache(
         shared_clip_node_id,
         &additional_clips,
     ));
@@ -675,7 +674,7 @@ fn create_tile_cache(
         spatial_node_index: scroll_root,
         background_color,
         shared_clip_node_id,
-        shared_clip_leaf_id,
+        tile_clip_node_id,
         virtual_surface_size: frame_builder_config.compositor_kind.get_virtual_surface_size(),
         image_surface_count: prim_list.image_surface_count,
         yuv_image_surface_count: prim_list.yuv_image_surface_count,
