@@ -260,6 +260,24 @@ pub enum PrimitiveKind {
 }
 
 impl PrimitiveKind {
+    /// Whether this primitive snaps its geometry and clips to the device pixel
+    /// grid.
+    ///
+    /// False only for device-space content: a text run is rasterized at an
+    /// exact sub-pixel position, so rounding its clips would shave the edge
+    /// glyph (bug 2050692). Everything else - including pictures, whose
+    /// image-mask clips must stay aligned with the mask they rasterize to -
+    /// snaps.
+    ///
+    /// Derived rather than stored: it is a property of the primitive type, so
+    /// storing it per instance or per interned template would just repeat the
+    /// same bit across every entry.
+    pub fn snaps(&self) -> bool {
+        !matches!(self, PrimitiveKind::TextRun { .. })
+    }
+}
+
+impl PrimitiveKind {
     pub fn as_pic(&self) -> PictureIndex {
         match self {
             PrimitiveKind::Picture { pic_index, .. } => *pic_index,
@@ -328,19 +346,18 @@ impl PrimitiveInstance {
     /// How this prim rounds to the device pixel grid: its own rect and its
     /// clips (see `SnapPolicy`).
     ///
-    /// `snaps` is the prim's snap policy, taken from its clip leaf: `false` for
-    /// a device-space prim (text run or surface) that stays at exact sub-pixel
-    /// positions and only needs a conservative, grid-aligned footprint. A
-    /// decoration line snaps its thickness specially so it can't vanish or
-    /// double with scale (bug 1783779); everything else snaps to the nearest
-    /// pixel.
+    /// A device-space prim (see `PrimitiveKind::snaps`) stays at exact
+    /// sub-pixel positions and only needs a conservative, grid-aligned
+    /// footprint. A decoration line snaps its thickness specially so it can't
+    /// vanish or double with scale (bug 1783779); everything else snaps to the
+    /// nearest pixel.
     ///
     /// The two rounding axes differ for a device-space prim: its bounding rect
     /// rounds out (a conservative, grid-aligned footprint for surface / cluster
     /// allocation) while its clips stay exact, at the sub-pixel position
     /// matching its contents (bug 2050692).
-    pub fn snap_policy(&self, snaps: bool, data_stores: &DataStores) -> SnapPolicy {
-        if !snaps {
+    pub fn snap_policy(&self, data_stores: &DataStores) -> SnapPolicy {
+        if !self.kind.snaps() {
             return SnapPolicy { rect: SnapRounding::RoundOut, clip: ClipSnap::Exact };
         }
         let rect = match self.kind {
@@ -828,12 +845,6 @@ impl Default for PrimitiveStore {
 /// Trait for primitives that are directly internable.
 /// see SceneBuilder::add_primitive<P>
 pub trait InternablePrimitive: intern::Internable<InternData = ()> + Sized {
-    /// Whether this primitive snaps its geometry and clips to the device pixel
-    /// grid. Overridden to `false` for device-space content (text runs), whose
-    /// clips must stay at their exact sub-pixel position (bug 2050692). Used
-    /// when building the primitive's clip leaf.
-    const SNAP_CLIPS: bool = true;
-
     /// Build a new key from self with `info`.
     fn into_key(
         self,
@@ -847,6 +858,39 @@ pub trait InternablePrimitive: intern::Internable<InternData = ()> + Sized {
     ) -> PrimitiveKind;
 }
 
+
+#[test]
+fn device_text_runs_do_not_snap_their_clips() {
+    // Regression test for bug 2050692 (Slack channel-name last character cut
+    // off). A device-space text run must resolve its clips UNSNAPPED, or a
+    // fractional clip edge rounds inward onto the device grid and shaves the
+    // last glyph.
+    //
+    // The rendered difference is a sub-pixel clip shift that headless software
+    // rasterization collapses (it only bites once the compositor anti-aliases
+    // the clip edge, e.g. Windows at a fractional device scale), so it cannot
+    // be guarded by a reftest - hence this unit test on the policy itself.
+    use crate::intern::Handle;
+
+    assert!(
+        !PrimitiveKind::TextRun { data_handle: Handle::INVALID }.snaps(),
+        "device-space text must not snap its clips (bug 2050692)",
+    );
+
+    // Everything else snaps, including pictures - an image-mask clip has to
+    // stay aligned with the mask it rasterizes to.
+    assert!(
+        PrimitiveKind::Rectangle { data_handle: Handle::INVALID }.snaps(),
+        "a snapping primitive must snap its clips",
+    );
+    assert!(
+        PrimitiveKind::Picture {
+            data_handle: Handle::INVALID,
+            pic_index: PictureIndex::INVALID,
+        }.snaps(),
+        "a picture must snap its clips so image-mask clips stay aligned",
+    );
+}
 
 #[test]
 #[cfg(target_pointer_width = "64")]

@@ -412,10 +412,8 @@ pub fn update_prim_visibility(
             // `PrimitiveInstance::snap_policy`.
             let prim_instance = &frame_state.prim_instances[prim_instance_index];
             let leaf_id = prim_instance.clip_leaf_id;
-            let snaps = frame_state.clip_tree.get_leaf(leaf_id).prim_clip_root
-                != ClipNodeId::INVALID;
 
-            let policy = prim_instance.snap_policy(snaps, frame_state.data_stores);
+            let policy = prim_instance.snap_policy(frame_state.data_stores);
             let unsnapped_pattern_rect = frame_state.data_stores.prim_rect(prim_instance);
             let snapped_pattern_rect =
                 snapper.snap_rect_rounded(&unsnapped_pattern_rect, policy.rect);
