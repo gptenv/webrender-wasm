@@ -273,6 +273,7 @@ impl TileCacheBuilder {
         &mut self,
         prim_instance: PrimitiveInstance,
         prim_rect: LayoutRect,
+        prim_local_clip_rect: LayoutRect,
         spatial_node_index: SpatialNodeIndex,
         prim_flags: PrimitiveFlags,
         spatial_tree: &SceneSpatialTree,
@@ -287,10 +288,10 @@ impl TileCacheBuilder {
                 prim_list.add_prim(
                     prim_instance,
                     prim_rect,
+                    prim_local_clip_rect,
                     spatial_node_index,
                     prim_flags,
                     prim_instances,
-                    clip_tree_builder,
                 );
             }
             SliceKind::Default { ref mut secondary_slices } => {
@@ -381,10 +382,10 @@ impl TileCacheBuilder {
                     .add_prim(
                         prim_instance,
                         prim_rect,
+                        prim_local_clip_rect,
                         spatial_node_index,
                         prim_flags,
                         prim_instances,
-                        clip_tree_builder,
                     );
             }
         }
