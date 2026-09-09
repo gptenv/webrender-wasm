@@ -39,7 +39,7 @@ use api::{DocumentId, Epoch, ExternalImageHandler, RenderReasons};
 use api::{PipelineId, Checkpoint, NotificationRequest, ImageBufferKind};
 use api::{FramePublishId, ImageFormat, RenderBackendId};
 #[cfg(any(feature = "capture", feature = "replay"))]
-use api::{ExternalImageSource, ExternalImageType};
+use api::{ExternalImageSource, ExternalImageType, ExternalTextureHandle};
 #[cfg(feature = "replay")]
 use api::{ExternalImage, ExternalImageId};
 use api::units::*;
@@ -62,8 +62,6 @@ use crate::debug_colors;
 use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, GraphicsApiInfo, UploadPBOPool};
 use crate::device::{LoadOp, ReadTarget, RenderPassDescriptor, ShaderError, StoreOp, Texture, TextureFilter, TextureFlags, TextureSlot, Texel};
 use crate::device::query::{GpuSampler, GpuTimer};
-#[cfg(feature = "capture")]
-use crate::device::FBOId;
 use crate::debug_item::DebugItem;
 use crate::frame_builder::Frame;
 use glyph_rasterizer::GlyphFormat;
@@ -94,7 +92,6 @@ use upload::{upload_to_texture_cache, UploadTexturePool};
 use init::*;
 
 use euclid::{Transform3D, Scale, default};
-use gleam::gl;
 use malloc_size_of::MallocSizeOfOps;
 
 use std::sync::Arc;
@@ -784,8 +781,6 @@ pub struct Renderer {
     /// The set of documents which we've seen a publish for since last render.
     documents_seen: FastHashSet<DocumentId>,
 
-    #[cfg(feature = "capture")]
-    read_fbo: FBOId,
     #[cfg(feature = "replay")]
     owned_external_images: FastHashMap<(ExternalImageId, u8), ExternalTexture>,
 
@@ -1177,7 +1172,6 @@ impl Renderer {
                         let mut texture_list = Vec::new();
 
                         self.device.begin_frame();
-                        self.device.bind_read_target_impl(self.read_fbo, DeviceIntPoint::zero());
 
                         for (id, item) in &self.texture_resolver.texture_cache_map {
                             if category.is_some() && category != Some(item.category) {
@@ -3882,7 +3876,7 @@ impl Renderer {
 
                             DrawTarget::NativeSurface {
                                 offset: surface_info.origin,
-                                external_fbo_id: surface_info.fbo_id,
+                                handle: surface_info.handle,
                                 dimensions: size,
                             }
                         }
@@ -4070,8 +4064,7 @@ impl Renderer {
             async_frame_recorder.deinit(&mut self.device);
         }
 
-        #[cfg(feature = "capture")]
-        self.device.delete_fbo(self.read_fbo);
+        self.device.deinit();
         #[cfg(feature = "replay")]
         for (_, ext) in self.owned_external_images {
             self.device.delete_external_texture(ext);
@@ -4265,7 +4258,7 @@ struct PlainExternalResources {
 
 #[cfg(feature = "replay")]
 enum CapturedExternalImageData {
-    NativeTexture(gl::GLuint),
+    NativeTexture(ExternalTextureHandle),
     Buffer(Arc<Vec<u8>>),
 }
 
@@ -4398,12 +4391,11 @@ impl Renderer {
 
         self.device.begin_frame();
         let _gm = self.gpu_profiler.start_marker("read GPU data");
-        self.device.bind_read_target_impl(self.read_fbo, DeviceIntPoint::zero());
 
         if config.bits.contains(CaptureBits::EXTERNAL_RESOURCES) && !deferred_images.is_empty() {
             info!("saving external images");
             let mut arc_map = FastHashMap::<*const u8, String>::default();
-            let mut tex_map = FastHashMap::<u32, String>::default();
+            let mut tex_map = FastHashMap::<ExternalTextureHandle, String>::default();
             let handler = self.external_image_handler
                 .as_mut()
                 .expect("Unable to lock the external image handler!");
@@ -4425,9 +4417,9 @@ impl Renderer {
                             }
                         }
                     }
-                    ExternalImageSource::NativeTexture(gl_id) => {
+                    ExternalImageSource::NativeTexture(handle) => {
                         let tex_id = tex_map.len() + 1;
-                        match tex_map.entry(gl_id) {
+                        match tex_map.entry(handle) {
                             Entry::Occupied(e) => {
                                 (None, e.get().clone())
                             }
@@ -4437,7 +4429,7 @@ impl Renderer {
                                     ExternalImageType::Buffer => unreachable!(),
                                 };
                                 info!("\t\tnative texture of target {:?}", target);
-                                self.device.attach_read_texture_external(gl_id, target);
+                                self.device.attach_read_texture_external(handle, target);
                                 let data = self.device.read_pixels(&def.descriptor);
                                 let short_path = format!("externals/t{}.raw", tex_id);
                                 (Some(data), e.insert(short_path).clone())
@@ -4557,7 +4549,7 @@ impl Renderer {
 
         if let Some(external_resources) = config.deserialize_for_resource::<PlainExternalResources, _>("external_resources") {
             info!("loading external texture-backed images");
-            let mut native_map = FastHashMap::<String, gl::GLuint>::default();
+            let mut native_map = FastHashMap::<String, ExternalTextureHandle>::default();
             for ExternalCaptureImage { short_path, external, descriptor } in external_resources.images {
                 let target = match external.image_type {
                     ExternalImageType::TextureHandle(target) => target,
@@ -4587,7 +4579,7 @@ impl Renderer {
                         );
                         let extex = t.0.into_external();
                         self.owned_external_images.insert(key, extex.clone());
-                        e.insert(extex.internal_id()).clone()
+                        e.insert(extex.handle()).clone()
                     }
                 };
 

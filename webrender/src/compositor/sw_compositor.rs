@@ -10,6 +10,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicI8, AtomicPtr, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
+use crate::NativeSurfaceHandle;
 use crate::{
     api::units::*, api::ColorDepth, api::ColorF, api::ExternalImageId, api::ImageRendering, api::YuvRangedColorSpace,
     Compositor, CompositorCapabilities, CompositorSurfaceTransform, NativeSurfaceId, NativeSurfaceInfo, NativeTileId,
@@ -1766,7 +1767,7 @@ impl Compositor for SwCompositor {
     fn bind(&mut self, device: &mut Device, id: NativeTileId, dirty_rect: DeviceIntRect, valid_rect: DeviceIntRect) -> NativeSurfaceInfo {
         let mut surface_info = NativeSurfaceInfo {
             origin: DeviceIntPoint::zero(),
-            fbo_id: 0,
+            handle: NativeSurfaceHandle::DEFAULT,
         };
 
         self.cur_tile = id;
@@ -1821,7 +1822,7 @@ impl Compositor for SwCompositor {
                     self.max_tile_size.width,
                     self.max_tile_size.height,
                 );
-                surface_info.fbo_id = tile.fbo_id;
+                surface_info.handle = NativeSurfaceHandle(tile.fbo_id as u64);
                 surface_info.origin -= valid_rect.min.to_vector();
             }
         }

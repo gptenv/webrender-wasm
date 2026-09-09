@@ -24,8 +24,9 @@ use crate::internal_types::{FastHashMap, FastHashSet};
 use crate::profiler::{self, Profiler, TransactionProfile};
 use crate::render_backend::RenderBackend;
 use crate::texture_cache::TextureCacheConfig;
+use gleam::gl;
 use crate::renderer::{
-    debug, vertex, gl,
+    debug, vertex,
     debug::DebugOverlayState,
     Renderer, BufferDamageTracker, PipelineInfo, TextureResolver,
     RendererError, ShaderPrecacheFlags, VERTEX_DATA_TEXTURE_COUNT,
@@ -747,8 +748,6 @@ pub fn create_webrender_instance(
     }
 
     let gpu_profiler = device.create_gpu_profiler(options.enable_gpu_markers);
-    #[cfg(feature = "capture")]
-    let read_fbo = device.create_fbo();
 
     let mut renderer = Renderer {
         result_rx,
@@ -795,8 +794,6 @@ pub fn create_webrender_instance(
         renderer_errors: Vec::new(),
         async_frame_recorder: None,
         async_screenshots: None,
-        #[cfg(feature = "capture")]
-        read_fbo,
         #[cfg(feature = "replay")]
         owned_external_images: FastHashMap::default(),
         notifications: Vec::new(),

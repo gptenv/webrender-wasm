@@ -5,7 +5,8 @@
 use super::super::shader_source::{OPTIMIZED_SHADERS, UNOPTIMIZED_SHADERS};
 use super::query_gl::{GpuDebugMethod, GpuProfiler};
 use api::{ImageDescriptor, ImageFormat, Parameter, BoolParameter, IntParameter, ImageRendering};
-use api::{MixBlendMode, ImageBufferKind, VoidPtrToSizeFn};
+use api::{ExternalTextureHandle, MixBlendMode, ImageBufferKind, VoidPtrToSizeFn};
+use crate::composite::NativeSurfaceHandle;
 use api::{CrashAnnotator, CrashAnnotation, CrashAnnotatorGuard};
 use api::units::*;
 use euclid::default::Transform3D;
@@ -441,13 +442,13 @@ pub struct ExternalTexture {
 
 impl ExternalTexture {
     pub fn new(
-        id: u32,
+        handle: ExternalTextureHandle,
         target: ImageBufferKind,
         uv_rect: TexelRect,
         image_rendering: ImageRendering,
     ) -> Self {
         ExternalTexture {
-            id,
+            id: handle.0 as gl::GLuint,
             target: get_gl_target(target),
             uv_rect,
             image_rendering,
@@ -455,8 +456,8 @@ impl ExternalTexture {
     }
 
     #[cfg(feature = "replay")]
-    pub fn internal_id(&self) -> gl::GLuint {
-        self.id
+    pub fn handle(&self) -> ExternalTextureHandle {
+        ExternalTextureHandle(self.id as u64)
     }
 
     pub fn get_uv_rect(&self) -> TexelRect {
@@ -1197,6 +1198,8 @@ pub struct Device {
     bound_read_fbo: (FBOId, DeviceIntPoint),
     bound_draw_fbo: FBOId,
     current_render_pass: Option<RenderPassDescriptor>,
+    /// Framebuffer used to read back textures, created on first use.
+    scratch_read_fbo: Option<FBOId>,
     default_read_fbo: FBOId,
     default_draw_fbo: FBOId,
 
@@ -1323,20 +1326,11 @@ pub enum DrawTarget {
         with_depth: bool,
         /// FBO that corresponds to the selected layer / depth mode
         fbo_id: FBOId,
-        /// Native GL texture ID
-        id: gl::GLuint,
-        /// Native GL texture target
-        target: gl::GLuint,
-    },
-    /// Use an FBO attached to an external texture.
-    External {
-        fbo: FBOId,
-        size: FramebufferIntSize,
     },
     /// An OS compositor surface
     NativeSurface {
         offset: DeviceIntPoint,
-        external_fbo_id: u32,
+        handle: NativeSurfaceHandle,
         dimensions: DeviceIntSize,
     },
 }
@@ -1373,8 +1367,6 @@ impl DrawTarget {
             dimensions: texture.get_dimensions(),
             fbo_id,
             with_depth,
-            id: texture.id,
-            target: texture.target,
         }
     }
 
@@ -1383,7 +1375,6 @@ impl DrawTarget {
         match *self {
             DrawTarget::Default { total_size, .. } => total_size.cast_unit(),
             DrawTarget::Texture { dimensions, .. } => dimensions,
-            DrawTarget::External { size, .. } => size.cast_unit(),
             DrawTarget::NativeSurface { dimensions, .. } => dimensions,
         }
     }
@@ -1391,8 +1382,7 @@ impl DrawTarget {
     pub fn offset(&self) -> DeviceIntPoint {
         match *self {
             DrawTarget::Default { .. } |
-            DrawTarget::Texture { .. } |
-            DrawTarget::External { .. } => {
+            DrawTarget::Texture { .. } => {
                 DeviceIntPoint::zero()
             }
             DrawTarget::NativeSurface { offset, .. } => offset,
@@ -1413,7 +1403,7 @@ impl DrawTarget {
                     fb_rect.max.y = fb_rect.min.y + h;
                 }
             }
-            DrawTarget::Texture { .. } | DrawTarget::External { .. } | DrawTarget::NativeSurface { .. } => (),
+            DrawTarget::Texture { .. } | DrawTarget::NativeSurface { .. } => (),
         }
         fb_rect
     }
@@ -1421,7 +1411,7 @@ impl DrawTarget {
     pub fn surface_origin_is_top_left(&self) -> bool {
         match *self {
             DrawTarget::Default { surface_origin_is_top_left, .. } => surface_origin_is_top_left,
-            DrawTarget::Texture { .. } | DrawTarget::External { .. } | DrawTarget::NativeSurface { .. } => true,
+            DrawTarget::Texture { .. } | DrawTarget::NativeSurface { .. } => true,
         }
     }
 
@@ -1444,7 +1434,7 @@ impl DrawTarget {
                 DrawTarget::NativeSurface { offset, .. } => {
                     device_rect_as_framebuffer_rect(&scissor_rect.translate(offset.to_vector()))
                 }
-                DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
+                DrawTarget::Texture { .. } => {
                     device_rect_as_framebuffer_rect(&scissor_rect)
                 }
             }
@@ -1467,10 +1457,6 @@ pub enum ReadTarget {
         /// ID of the FBO to read from.
         fbo_id: FBOId,
     },
-    /// Use an FBO attached to an external texture.
-    External {
-        fbo: FBOId,
-    },
     /// An FBO bound to a native (OS compositor) surface
     NativeSurface {
         fbo_id: FBOId,
@@ -1490,8 +1476,7 @@ impl ReadTarget {
     fn offset(&self) -> DeviceIntPoint {
         match *self {
             ReadTarget::Default |
-            ReadTarget::Texture { .. } |
-            ReadTarget::External { .. } => {
+            ReadTarget::Texture { .. } => {
                 DeviceIntPoint::zero()
             }
 
@@ -1508,17 +1493,14 @@ impl From<DrawTarget> for ReadTarget {
             DrawTarget::Default { .. } => {
                 ReadTarget::Default
             }
-            DrawTarget::NativeSurface { external_fbo_id, offset, .. } => {
+            DrawTarget::NativeSurface { handle, offset, .. } => {
                 ReadTarget::NativeSurface {
-                    fbo_id: FBOId(external_fbo_id),
+                    fbo_id: FBOId(handle.0 as gl::GLuint),
                     offset,
                 }
             }
             DrawTarget::Texture { fbo_id, .. } => {
                 ReadTarget::Texture { fbo_id }
-            }
-            DrawTarget::External { fbo, .. } => {
-                ReadTarget::External { fbo }
             }
         }
     }
@@ -2111,6 +2093,7 @@ impl Device {
             bound_vao: 0,
             bound_read_fbo: (FBOId(0), DeviceIntPoint::zero()),
             current_render_pass: None,
+            scratch_read_fbo: None,
             bound_draw_fbo: FBOId(0),
             default_read_fbo: FBOId(0),
             default_draw_fbo: FBOId(0),
@@ -2513,7 +2496,7 @@ impl Device {
         );
     }
 
-    pub fn bind_read_target_impl(
+    fn bind_read_target_impl(
         &mut self,
         fbo_id: FBOId,
         offset: DeviceIntPoint,
@@ -2531,7 +2514,6 @@ impl Device {
         let fbo_id = match target {
             ReadTarget::Default => self.default_read_fbo,
             ReadTarget::Texture { fbo_id } => fbo_id,
-            ReadTarget::External { fbo } => fbo,
             ReadTarget::NativeSurface { fbo_id, .. } => fbo_id,
         };
 
@@ -2617,12 +2599,9 @@ impl Device {
                 );
                 (fbo_id, rect, with_depth)
             },
-            DrawTarget::External { fbo, size } => {
-                (fbo, size.into(), false)
-            }
-            DrawTarget::NativeSurface { external_fbo_id, offset, dimensions, .. } => {
+            DrawTarget::NativeSurface { handle, offset, dimensions, .. } => {
                 (
-                    FBOId(external_fbo_id),
+                    FBOId(handle.0 as gl::GLuint),
                     device_rect_as_framebuffer_rect(&DeviceIntRect::from_origin_and_size(offset, dimensions)),
                     true
                 )
@@ -2641,11 +2620,11 @@ impl Device {
 
     /// Creates an unbound FBO object. Additional attachment API calls are
     /// required to make it complete.
-    pub fn create_fbo(&mut self) -> FBOId {
+    fn create_fbo(&mut self) -> FBOId {
         FBOId(self.gl.gen_framebuffers(1)[0])
     }
 
-    pub fn delete_fbo(&mut self, fbo: FBOId) {
+    fn delete_fbo(&mut self, fbo: FBOId) {
         self.gl.delete_framebuffers(&[fbo.0]);
     }
 
@@ -3592,13 +3571,30 @@ impl Device {
         )
     }
 
+    /// Binds the device-owned scratch read framebuffer, so that a texture can
+    /// be attached to it and read back.
+    fn bind_scratch_read_target(&mut self) {
+        let fbo = match self.scratch_read_fbo {
+            Some(fbo) => fbo,
+            None => {
+                let fbo = self.create_fbo();
+                self.scratch_read_fbo = Some(fbo);
+                fbo
+            }
+        };
+        self.bind_read_target_impl(fbo, DeviceIntPoint::zero());
+    }
+
+    /// Makes an application-owned texture the current read target.
     pub fn attach_read_texture_external(
-        &mut self, texture_id: gl::GLuint, target: ImageBufferKind
+        &mut self, handle: ExternalTextureHandle, target: ImageBufferKind
     ) {
-        self.attach_read_texture_raw(texture_id, get_gl_target(target))
+        self.bind_scratch_read_target();
+        self.attach_read_texture_raw(handle.0 as gl::GLuint, get_gl_target(target))
     }
 
     pub fn attach_read_texture(&mut self, texture: &Texture) {
+        self.bind_scratch_read_target();
         self.attach_read_texture_raw(texture.id, texture.target)
     }
 
@@ -3990,6 +3986,15 @@ impl Device {
             instance_count,
             base_instance,
         );
+    }
+
+    /// Releases resources the device created for its own use. Must be called
+    /// inside a frame, before the device is dropped.
+    pub fn deinit(&mut self) {
+        debug_assert!(self.inside_frame);
+        if let Some(fbo) = self.scratch_read_fbo.take() {
+            self.delete_fbo(fbo);
+        }
     }
 
     pub fn end_frame(&mut self) {

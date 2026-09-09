@@ -112,7 +112,7 @@ impl Renderer {
             // Bind the native surface to current FBO target
             let draw_target = DrawTarget::NativeSurface {
                 offset: surface_info.origin,
-                external_fbo_id: surface_info.fbo_id,
+                handle: surface_info.handle,
                 dimensions: surface_size,
             };
             self.device.begin_render_pass(&RenderPassDescriptor {
@@ -1169,7 +1169,7 @@ impl Renderer {
 
                     DrawTarget::NativeSurface {
                         offset: -layer.offset,
-                        external_fbo_id: 0,
+                        handle: crate::composite::NativeSurfaceHandle::DEFAULT,
                         dimensions: frame_device_size,
                     }
                 }

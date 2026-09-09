@@ -540,7 +540,7 @@ pub fn bind_debug_overlay(
                 // Bind the native surface to current FBO target
                 let draw_target = DrawTarget::NativeSurface {
                     offset: surface_info.origin,
-                    external_fbo_id: surface_info.fbo_id,
+                    handle: surface_info.handle,
                     dimensions: surface_size,
                 };
                 device.begin_render_pass(&RenderPassDescriptor {

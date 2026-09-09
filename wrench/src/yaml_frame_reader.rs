@@ -160,7 +160,7 @@ impl ExternalImageHandler for LocalExternalImageHandler {
         let (id, desc) = self.texture_ids[key.0 as usize];
         ExternalImage {
             uv: TexelRect::new(0.0, 0.0, desc.size.width as f32, desc.size.height as f32),
-            source: ExternalImageSource::NativeTexture(id),
+            source: ExternalImageSource::NativeTexture(ExternalTextureHandle(id as u64)),
         }
     }
     fn unlock(&mut self, _key: ExternalImageId, _channel_index: u8) {}

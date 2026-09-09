@@ -1368,6 +1368,20 @@ impl NativeTileId {
     };
 }
 
+/// An opaque handle to a native compositor surface that WR can draw to. Its
+/// meaning depends on the graphics API the renderer runs on; with OpenGL it
+/// is the name of a framebuffer object.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NativeSurfaceHandle(pub u64);
+
+impl NativeSurfaceHandle {
+    /// Refers to whatever the embedder has already bound as the default
+    /// draw target, for example after `LayerCompositor::bind_layer`, or a
+    /// DirectComposition surface bound as the default framebuffer.
+    pub const DEFAULT: Self = NativeSurfaceHandle(0);
+}
+
 /// Information about a bound surface that the native compositor
 /// returns to WR.
 #[repr(C)]
@@ -1379,14 +1393,11 @@ pub struct NativeSurfaceInfo {
     /// be returned into the larger texture where WR should draw. This
     /// can be (0, 0) if texture atlases are not used.
     pub origin: DeviceIntPoint,
-    /// The ID of the FBO that WR should bind to, in order to draw to
-    /// the bound surface. On Windows (ANGLE) this will always be 0,
-    /// since creating a p-buffer sets the default framebuffer to
-    /// be the DirectComposition surface. On Mac, this will be non-zero,
-    /// since it identifies the IOSurface that has been bound to draw to.
-    // TODO(gw): This may need to be a larger / different type for WR
-    //           backends that are not GL.
-    pub fbo_id: u32,
+    /// The surface that WR should draw to. On Windows (ANGLE) this is
+    /// `NativeSurfaceHandle::DEFAULT`, since creating a p-buffer sets the
+    /// default framebuffer to be the DirectComposition surface. On Mac it
+    /// identifies the IOSurface that has been bound to draw to.
+    pub handle: NativeSurfaceHandle,
 }
 
 #[repr(C)]
