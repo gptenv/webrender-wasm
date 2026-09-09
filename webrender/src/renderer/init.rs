@@ -558,7 +558,7 @@ pub fn create_webrender_instance(
             CompositorKind::Draw { max_partial_present_rects, draw_previous_partial_present_regions }
         }
         CompositorConfig::Native { ref compositor } => {
-            let capabilities = compositor.get_capabilities(&mut device);
+            let capabilities = compositor.get_capabilities();
 
             CompositorKind::Native {
                 capabilities,

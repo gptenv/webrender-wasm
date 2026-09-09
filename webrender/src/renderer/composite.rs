@@ -99,7 +99,6 @@ impl Renderer {
                 .compositor()
                 .unwrap()
                 .bind(
-                    &mut self.device,
                     NativeTileId {
                         surface_id: native_surface_id,
                         x: 0,
@@ -227,7 +226,7 @@ impl Renderer {
             self.compositor_config
                 .compositor()
                 .unwrap()
-                .unbind(&mut self.device);
+                .unbind();
         }
 
         self.gpu_profiler.finish_sampler(opaque_sampler);

@@ -1435,7 +1435,7 @@ impl Renderer {
                         self.compositor_config
                             .compositor()
                             .unwrap()
-                            .destroy_surface(&mut self.device, NativeSurfaceId::DEBUG_OVERLAY);
+                            .destroy_surface(NativeSurfaceId::DEBUG_OVERLAY);
                         self.debug_overlay_state.current_size = None;
                     }
                     false
@@ -1451,7 +1451,7 @@ impl Renderer {
             };
 
             if let Some(config) = self.compositor_config.compositor() {
-                config.enable_native_compositor(&mut self.device, enable);
+                config.enable_native_compositor(enable);
             }
             self.current_compositor_kind = compositor_kind;
         }
@@ -1496,13 +1496,12 @@ impl Renderer {
             // we can create debug overlays after drawing the main surfaces.
             if let CompositorKind::Native { .. } = self.current_compositor_kind {
                 let compositor = self.compositor_config.compositor().unwrap();
-                compositor.begin_frame(&mut self.device);
+                compositor.begin_frame();
             }
 
             // Update the state of the debug overlay surface, ensuring that
             // the compositor mode has a suitable surface to draw to, if required.
             debug::update_debug_overlay(
-                &mut self.device,
                 &mut self.compositor_config,
                 self.current_compositor_kind,
                 &mut self.debug_overlay_state,
@@ -1773,7 +1772,6 @@ impl Renderer {
             // Unbind the target for the debug overlay. No debug or profiler drawing
             // can occur afer this point.
             debug::unbind_debug_overlay(
-                &mut self.device,
                 &mut self.compositor_config,
                 self.current_compositor_kind,
                 &self.debug_overlay_state,
@@ -1792,7 +1790,7 @@ impl Renderer {
                 CompositorKind::Native { .. } => {
                     tracy_rs::profile_scope!("compositor.end_frame");
                     let compositor = self.compositor_config.compositor().unwrap();
-                    compositor.end_frame(&mut self.device);
+                    compositor.end_frame();
                 }
                 CompositorKind::Draw { .. } => {}
             }
@@ -3585,44 +3583,35 @@ impl Renderer {
                             let _inserted = self.allocated_native_surfaces.insert(id);
                             debug_assert!(_inserted, "bug: creating existing surface");
                             compositor.create_surface(
-                                    &mut self.device,
-                                    id,
-                                    virtual_offset,
-                                    tile_size,
-                                    is_opaque,
+                                id,
+                                virtual_offset,
+                                tile_size,
+                                is_opaque,
                             );
                         }
                         NativeSurfaceOperationDetails::CreateExternalSurface { id, is_opaque } => {
                             let _inserted = self.allocated_native_surfaces.insert(id);
                             debug_assert!(_inserted, "bug: creating existing surface");
-                            compositor.create_external_surface(
-                                &mut self.device,
-                                id,
-                                is_opaque,
-                            );
+                            compositor.create_external_surface(id, is_opaque);
                         }
                         NativeSurfaceOperationDetails::CreateBackdropSurface { id, color } => {
                             let _inserted = self.allocated_native_surfaces.insert(id);
                             debug_assert!(_inserted, "bug: creating existing surface");
-                            compositor.create_backdrop_surface(
-                                &mut self.device,
-                                id,
-                                color,
-                            );
+                            compositor.create_backdrop_surface(id, color);
                         }
                         NativeSurfaceOperationDetails::DestroySurface { id } => {
                             let _existed = self.allocated_native_surfaces.remove(&id);
                             debug_assert!(_existed, "bug: removing unknown surface");
-                            compositor.destroy_surface(&mut self.device, id);
+                            compositor.destroy_surface(id);
                         }
                         NativeSurfaceOperationDetails::CreateTile { id } => {
-                            compositor.create_tile(&mut self.device, id);
+                            compositor.create_tile(id);
                         }
                         NativeSurfaceOperationDetails::DestroyTile { id } => {
-                            compositor.destroy_tile(&mut self.device, id);
+                            compositor.destroy_tile(id);
                         }
                         NativeSurfaceOperationDetails::AttachExternalImage { id, external_image } => {
-                            compositor.attach_external_image(&mut self.device, id, external_image);
+                            compositor.attach_external_image(id, external_image);
                         }
                     }
                 }
@@ -3791,7 +3780,7 @@ impl Renderer {
                                 tile.transform_index,
                             ).to_i32();
 
-                            compositor.invalidate_tile(&mut self.device, id, valid_rect);
+                            compositor.invalidate_tile(id, valid_rect);
                         }
                     }
                 }
@@ -3803,7 +3792,7 @@ impl Renderer {
             for surface in &frame.composite_state.external_surfaces {
                 if let Some((native_surface_id, size)) = surface.update_params {
                     let surface_rect = size.into();
-                    compositor.invalidate_tile(&mut self.device, NativeTileId { surface_id: native_surface_id, x: 0, y: 0 }, surface_rect);
+                    compositor.invalidate_tile(NativeTileId { surface_id: native_surface_id, x: 0, y: 0 }, surface_rect);
                 }
             }
             // Finally queue native surfaces for early composition, if applicable. By now,
@@ -3814,7 +3803,6 @@ impl Renderer {
                 frame.composite_state.composite_native(
                     self.clear_color,
                     &results.dirty_rects,
-                    &mut self.device,
                     &mut **compositor,
                 );
             }
@@ -3863,7 +3851,6 @@ impl Renderer {
                                 CompositorKind::Native { .. } => {
                                     let compositor = self.compositor_config.compositor().unwrap();
                                     compositor.bind(
-                                        &mut self.device,
                                         id,
                                         picture_target.dirty_rect,
                                         picture_target.valid_rect,
@@ -3904,7 +3891,7 @@ impl Renderer {
                         match self.current_compositor_kind {
                             CompositorKind::Native { .. } => {
                                 let compositor = self.compositor_config.compositor().unwrap();
-                                compositor.unbind(&mut self.device);
+                                compositor.unbind();
                             }
                             CompositorKind::Draw { .. } | CompositorKind::Layer { .. } => {
                                 unreachable!();
@@ -4023,13 +4010,13 @@ impl Renderer {
         // surfaces are freed.
         if let CompositorConfig::Native { mut compositor, .. } = self.compositor_config {
             for id in self.allocated_native_surfaces.drain() {
-                compositor.destroy_surface(&mut self.device, id);
+                compositor.destroy_surface(id);
             }
             // Destroy the debug overlay surface, if currently allocated.
             if self.debug_overlay_state.current_size.is_some() {
-                compositor.destroy_surface(&mut self.device, NativeSurfaceId::DEBUG_OVERLAY);
+                compositor.destroy_surface(NativeSurfaceId::DEBUG_OVERLAY);
             }
-            compositor.deinit(&mut self.device);
+            compositor.deinit();
         }
         if let Some(dither_matrix_texture) = self.dither_matrix_texture {
             self.device.delete_texture(dither_matrix_texture);
@@ -4649,7 +4636,6 @@ impl CompositeState {
         &self,
         clear_color: ColorF,
         dirty_rects: &[DeviceIntRect],
-        device: &mut Device,
         compositor: &mut dyn Compositor,
     ) {
         // Add each surface to the visual tree. z-order is implicit based on
@@ -4657,7 +4643,6 @@ impl CompositeState {
         // surface.
         for surface in &self.descriptor.surfaces {
             compositor.add_surface(
-                device,
                 surface.surface_id.expect("bug: no native surface allocated"),
                 surface.transform,
                 surface.clip_rect.to_i32(),
@@ -4666,7 +4651,7 @@ impl CompositeState {
                 surface.rounded_clip_radii,
             );
         }
-        compositor.start_compositing(device, clear_color, dirty_rects, &[]);
+        compositor.start_compositing(clear_color, dirty_rects, &[]);
     }
 }
 

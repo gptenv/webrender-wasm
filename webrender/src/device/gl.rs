@@ -238,7 +238,7 @@ fn depth_target_size_in_bytes(dimensions: &DeviceIntSize) -> usize {
     (pixels as usize) * 4
 }
 
-pub fn get_gl_target(target: ImageBufferKind) -> gl::GLuint {
+fn get_gl_target(target: ImageBufferKind) -> gl::GLuint {
     match target {
         ImageBufferKind::Texture2D => gl::TEXTURE_2D,
         ImageBufferKind::TextureRect => gl::TEXTURE_RECTANGLE,
@@ -2122,7 +2122,7 @@ impl Device {
         }
     }
 
-    pub fn gl(&self) -> &dyn gl::Gl {
+    fn gl(&self) -> &dyn gl::Gl {
         &*self.gl
     }
 
@@ -4300,7 +4300,7 @@ impl Device {
         }
     }
 
-    pub fn gl_describe_format(&self, format: ImageFormat) -> FormatDesc {
+    fn gl_describe_format(&self, format: ImageFormat) -> FormatDesc {
         match format {
             ImageFormat::R8 => FormatDesc {
                 internal: gl::R8,
