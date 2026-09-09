@@ -60,7 +60,7 @@ use crate::composite::{CompositorConfig, NativeSurfaceOperationDetails, NativeSu
 use api::debugger::{CompositorDebugInfo, DebuggerTextureContent};
 use crate::debug_colors;
 use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, GraphicsApiInfo, UploadPBOPool};
-use crate::device::{ReadTarget, ShaderError, Texture, TextureFilter, TextureFlags, TextureSlot, Texel};
+use crate::device::{LoadOp, ReadTarget, RenderPassDescriptor, ShaderError, StoreOp, Texture, TextureFilter, TextureFlags, TextureSlot, Texel};
 use crate::device::query::{GpuSampler, GpuTimer};
 #[cfg(feature = "capture")]
 use crate::device::FBOId;
@@ -1765,6 +1765,10 @@ impl Renderer {
             );
         }
 
+        if debug_overlay.is_some() {
+            self.device.end_render_pass(StoreOp::Store);
+        }
+
         self.staging_texture_pool.end_frame(&mut self.device);
         self.texture_upload_pbo_pool.end_frame(&mut self.device);
         self.device.end_frame();
@@ -1883,7 +1887,11 @@ impl Renderer {
                 }
 
                 let draw_target = DrawTarget::from_texture(dest_texture, false);
-                self.device.bind_draw_target(draw_target);
+                self.device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::Load,
+                });
 
                 self.shaders
                     .borrow_mut()
@@ -1905,6 +1913,8 @@ impl Renderer {
                     ),
                     &mut RendererStats::default(),
                 );
+
+                self.device.end_render_pass(StoreOp::Store);
             }
 
             // Find any textures that will need to be deleted in this group of allocations.
@@ -2249,11 +2259,6 @@ impl Renderer {
                 TextureFilter::Linear,
             );
         }
-
-        // Restore draw target to current pass render target, and reset
-        // the read target.
-        self.device.bind_draw_target(draw_target);
-        self.device.reset_read_target();
 
         if uses_scissor {
             self.device.enable_scissor();
@@ -2832,17 +2837,12 @@ impl Renderer {
 
         {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_SETUP_TARGET);
-            self.device.bind_draw_target(draw_target);
-
-            if self.device.get_capabilities().supports_qcom_tiled_rendering {
-                self.device.gl().start_tiling_qcom(
-                    target.dirty_rect.min.x.max(0) as _,
-                    target.dirty_rect.min.y.max(0) as _,
-                    target.dirty_rect.width() as _,
-                    target.dirty_rect.height() as _,
-                    0,
-                );
-            }
+            // The dirty rect is fully redrawn, so nothing needs loading.
+            self.device.begin_render_pass(&RenderPassDescriptor {
+                target: draw_target,
+                render_area: Some(target.dirty_rect),
+                color_load: LoadOp::DontCare,
+            });
 
             self.device.set_depth_write(true);
             self.set_blend_mode(BlendMode::None, framebuffer_kind);
@@ -2944,10 +2944,7 @@ impl Renderer {
             }
         }
 
-        self.device.invalidate_depth_target();
-        if self.device.get_capabilities().supports_qcom_tiled_rendering {
-            self.device.gl().end_tiling_qcom(gl::COLOR_BUFFER_BIT0_QCOM);
-        }
+        self.device.end_render_pass(StoreOp::Discard);
     }
 
     /// Draw an alpha batch container into a given draw target. This is used
@@ -3292,23 +3289,17 @@ impl Renderer {
             FramebufferKind::Other
         };
 
-        self.device.bind_draw_target(draw_target);
-
-        if self.device.get_capabilities().supports_qcom_tiled_rendering {
-            let preserve_mask = match target.clear_color {
-                Some(_) => 0,
-                None => gl::COLOR_BUFFER_BIT0_QCOM,
-            };
-            if let Some(used_rect) = target.used_rect {
-                self.device.gl().start_tiling_qcom(
-                    used_rect.min.x.max(0) as _,
-                    used_rect.min.y.max(0) as _,
-                    used_rect.width() as _,
-                    used_rect.height() as _,
-                    preserve_mask,
-                );
-            }
-        }
+        self.device.begin_render_pass(&RenderPassDescriptor {
+            target: draw_target,
+            render_area: target.used_rect,
+            // A target with a clear color is fully overwritten by the clear,
+            // so its previous contents need not be loaded.
+            color_load: if target.clear_color.is_some() {
+                LoadOp::DontCare
+            } else {
+                LoadOp::Load
+            },
+        });
 
         if needs_depth {
             self.device.set_depth_write(true);
@@ -3528,12 +3519,11 @@ impl Renderer {
             );
         }
 
-        if needs_depth {
-            self.device.invalidate_depth_target();
-        }
-        if self.device.get_capabilities().supports_qcom_tiled_rendering {
-            self.device.gl().end_tiling_qcom(gl::COLOR_BUFFER_BIT0_QCOM);
-        }
+        self.device.end_render_pass(if needs_depth {
+            StoreOp::Discard
+        } else {
+            StoreOp::Store
+        });
 
         if let Some(sampler) = sampler_query {
             self.gpu_profiler.finish_sampler(sampler);
@@ -4131,11 +4121,13 @@ impl Renderer {
 
     /// Clears the texture with a given color.
     fn clear_texture(&mut self, texture: &Texture, color: [f32; 4]) {
-        self.device.bind_draw_target(DrawTarget::from_texture(
-            &texture,
-            false,
-        ));
+        self.device.begin_render_pass(&RenderPassDescriptor {
+            target: DrawTarget::from_texture(&texture, false),
+            render_area: None,
+            color_load: LoadOp::DontCare,
+        });
         self.device.clear_target(Some(color), None, None);
+        self.device.end_render_pass(StoreOp::Store);
     }
 }
 

@@ -1007,6 +1007,36 @@ pub enum BlendMode {
     ShowOverdraw,
 }
 
+/// How the existing contents of a color attachment are treated when a
+/// render pass begins.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum LoadOp {
+    Load,
+    /// The pass overwrites everything it later reads, so tiled GPUs need not
+    /// load the previous contents.
+    DontCare,
+}
+
+/// What happens to an attachment's contents when a render pass ends.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum StoreOp {
+    Store,
+    /// The contents are not needed after the pass, so tiled GPUs need not
+    /// write them back to memory.
+    Discard,
+}
+
+/// Parameters of a render pass. All draws and clears to a target must happen
+/// between `Device::begin_render_pass` and `Device::end_render_pass`.
+#[derive(Debug, Copy, Clone)]
+pub struct RenderPassDescriptor {
+    pub target: DrawTarget,
+    /// The region of the target this pass writes to, if known. Tiled GPUs
+    /// only need to load and store this region.
+    pub render_area: Option<DeviceIntRect>,
+    pub color_load: LoadOp,
+}
+
 /// Describes the graphics API and driver a device is running on.
 #[derive(Clone, Debug)]
 pub struct GraphicsApiInfo {
@@ -1166,6 +1196,7 @@ pub struct Device {
     bound_vao: gl::GLuint,
     bound_read_fbo: (FBOId, DeviceIntPoint),
     bound_draw_fbo: FBOId,
+    current_render_pass: Option<RenderPassDescriptor>,
     default_read_fbo: FBOId,
     default_draw_fbo: FBOId,
 
@@ -1273,7 +1304,7 @@ pub struct Device {
 }
 
 /// Contains the parameters necessary to bind a draw target.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DrawTarget {
     /// Use the device's default draw target, with the provided dimensions,
     /// which are used to set the viewport.
@@ -2079,6 +2110,7 @@ impl Device {
             bound_program_name: Rc::new(std::ffi::CString::new("").unwrap()),
             bound_vao: 0,
             bound_read_fbo: (FBOId(0), DeviceIntPoint::zero()),
+            current_render_pass: None,
             bound_draw_fbo: FBOId(0),
             default_read_fbo: FBOId(0),
             default_draw_fbo: FBOId(0),
@@ -2527,7 +2559,51 @@ impl Device {
         self.depth_available = true;
     }
 
-    pub fn bind_draw_target(
+    /// Begins rendering to the target described by `desc`. Draws, clears and
+    /// blits into the target must happen before the matching `end_render_pass`.
+    /// Passes may not nest.
+    pub fn begin_render_pass(&mut self, desc: &RenderPassDescriptor) {
+        debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_none(), "render pass already in progress");
+
+        self.bind_draw_target(desc.target);
+
+        if self.capabilities.supports_qcom_tiled_rendering {
+            if let Some(area) = desc.render_area {
+                let preserve_mask = match desc.color_load {
+                    LoadOp::Load => gl::COLOR_BUFFER_BIT0_QCOM,
+                    LoadOp::DontCare => 0,
+                };
+                self.gl.start_tiling_qcom(
+                    area.min.x.max(0) as _,
+                    area.min.y.max(0) as _,
+                    area.width() as _,
+                    area.height() as _,
+                    preserve_mask,
+                );
+            }
+        }
+
+        self.current_render_pass = Some(*desc);
+    }
+
+    /// Ends the current render pass. `depth_store` says whether the depth
+    /// attachment's contents are needed afterwards; the color attachment is
+    /// always stored.
+    pub fn end_render_pass(&mut self, depth_store: StoreOp) {
+        debug_assert!(self.inside_frame);
+        let desc = self.current_render_pass.take().expect("no render pass in progress");
+
+        if depth_store == StoreOp::Discard {
+            self.invalidate_depth_target();
+        }
+
+        if self.capabilities.supports_qcom_tiled_rendering && desc.render_area.is_some() {
+            self.gl.end_tiling_qcom(gl::COLOR_BUFFER_BIT0_QCOM);
+        }
+    }
+
+    fn bind_draw_target(
         &mut self,
         target: DrawTarget,
     ) {
@@ -2856,7 +2932,10 @@ impl Device {
                 &texture,
                 false,
             ));
-            self.clear_target(Some([1.0, 0.0, 1.0, 1.0]), None, None);
+            self.clear_target_impl(Some([1.0, 0.0, 1.0, 1.0]), None, None);
+            if let Some(pass) = self.current_render_pass {
+                self.bind_draw_target(pass.target);
+            }
         }
 
         texture
@@ -3120,6 +3199,15 @@ impl Device {
         self.bind_draw_target(dest_target);
 
         self.blit_render_target_impl(src_rect, dest_rect, filter);
+
+        // A blit into another target from inside a render pass leaves the
+        // pass's own target unbound, so restore it.
+        if let Some(pass) = self.current_render_pass {
+            if pass.target != dest_target {
+                self.bind_draw_target(pass.target);
+                self.reset_read_target();
+            }
+        }
     }
 
     /// Performs a blit while flipping vertically. Useful for blitting textures
@@ -3759,6 +3847,7 @@ impl Device {
 
     pub fn draw_triangles_u16(&mut self, first_vertex: i32, index_count: i32) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3782,6 +3871,7 @@ impl Device {
 
     pub fn draw_triangles_u32(&mut self, first_vertex: i32, index_count: i32) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3805,6 +3895,7 @@ impl Device {
 
     pub fn draw_nonindexed_lines(&mut self, first_vertex: i32, vertex_count: i32) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3823,6 +3914,7 @@ impl Device {
 
     pub fn draw_indexed_triangles(&mut self, index_count: i32) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3846,6 +3938,7 @@ impl Device {
 
     pub fn draw_indexed_triangles_instanced_u16(&mut self, index_count: i32, instance_count: i32) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3875,6 +3968,7 @@ impl Device {
         base_instance: u32,
     ) {
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_some(), "draw outside of a render pass");
         #[cfg(debug_assertions)]
         debug_assert!(self.shader_is_ready);
 
@@ -3903,6 +3997,7 @@ impl Device {
         self.reset_read_target();
 
         debug_assert!(self.inside_frame);
+        debug_assert!(self.current_render_pass.is_none(), "render pass still in progress");
         self.inside_frame = false;
 
         self.gl.bind_texture(gl::TEXTURE_2D, 0);
@@ -3926,6 +4021,16 @@ impl Device {
     }
 
     pub fn clear_target(
+        &self,
+        color: Option<[f32; 4]>,
+        depth: Option<f32>,
+        rect: Option<FramebufferIntRect>,
+    ) {
+        debug_assert!(self.current_render_pass.is_some(), "clear outside of a render pass");
+        self.clear_target_impl(color, depth, rect);
+    }
+
+    fn clear_target_impl(
         &self,
         color: Option<[f32; 4]>,
         depth: Option<f32>,

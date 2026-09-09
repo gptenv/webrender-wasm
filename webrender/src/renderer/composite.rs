@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::mem;
 use crate::debug_item::DebugItem;
 use crate::segment::EdgeMask;
-use crate::device::{BlendMode, DrawTarget};
+use crate::device::{BlendMode, DrawTarget, LoadOp, RenderPassDescriptor, StoreOp};
 use crate::gpu_types::{CompositeInstance, ZBufferId};
 use crate::internal_types::{FastHashMap, TextureSource};
 use crate::picture::ResolvedSurfaceTexture;
@@ -115,7 +115,11 @@ impl Renderer {
                 external_fbo_id: surface_info.fbo_id,
                 dimensions: surface_size,
             };
-            self.device.bind_draw_target(draw_target);
+            self.device.begin_render_pass(&RenderPassDescriptor {
+                target: draw_target,
+                render_area: None,
+                color_load: LoadOp::DontCare,
+            });
 
             let projection = Transform3D::ortho(
                 0.0,
@@ -217,6 +221,8 @@ impl Renderer {
                 &textures,
                 &mut results.stats,
             );
+
+            self.device.end_render_pass(StoreOp::Store);
 
             self.compositor_config
                 .compositor()
@@ -447,7 +453,11 @@ impl Renderer {
         partial_present_mode: Option<PartialPresentMode>,
         layer: &SwapChainLayer,
     ) {
-        self.device.bind_draw_target(draw_target);
+        self.device.begin_render_pass(&RenderPassDescriptor {
+            target: draw_target,
+            render_area: None,
+            color_load: LoadOp::Load,
+        });
         self.device.set_depth_write(false);
         self.device.set_depth_test(None);
 
@@ -515,6 +525,8 @@ impl Renderer {
             );
             self.gpu_profiler.finish_sampler(transparent_sampler);
         }
+
+        self.device.end_render_pass(StoreOp::Store);
     }
 
     /// Composite picture cache tiles into the framebuffer. This is currently

@@ -33,7 +33,7 @@ use crate::internal_types::{
 };
 use crate::device::{
     Device, UploadMethod, Texture, DrawTarget, UploadStagingBuffer, TextureFlags, TextureUploader,
-    TextureFilter,
+    TextureFilter, LoadOp, RenderPassDescriptor, StoreOp,
 };
 use crate::gpu_types::CopyInstance;
 use crate::batch::BatchTextures;
@@ -126,12 +126,17 @@ pub fn upload_to_texture_cache(
                         texture,
                         false,
                     );
-                    renderer.device.bind_draw_target(draw_target);
+                    renderer.device.begin_render_pass(&RenderPassDescriptor {
+                        target: draw_target,
+                        render_area: None,
+                        color_load: LoadOp::Load,
+                    });
                     renderer.device.clear_target(
                         Some(TEXTURE_CACHE_DBG_CLEAR_COLOR),
                         None,
                         Some(draw_target.to_framebuffer_rect(update.rect.to_i32()))
                     );
+                    renderer.device.end_render_pass(StoreOp::Store);
 
                     continue;
                 }
@@ -568,11 +573,19 @@ fn copy_from_staging_to_cache_using_draw_calls(
         }
 
         if dst_changed {
+            if prev_dst.is_some() {
+                renderer.device.end_render_pass(StoreOp::Store);
+            }
+
             let dest_texture = &renderer.texture_resolver.texture_cache_map[&copy.dest_texture_id].texture;
             dst_texture_size = dest_texture.get_dimensions().to_f32();
 
             let draw_target = DrawTarget::from_texture(dest_texture, false);
-            renderer.device.bind_draw_target(draw_target);
+            renderer.device.begin_render_pass(&RenderPassDescriptor {
+                target: draw_target,
+                render_area: None,
+                color_load: LoadOp::Load,
+            });
 
             renderer.shaders
                 .borrow_mut()
@@ -625,6 +638,10 @@ fn copy_from_staging_to_cache_using_draw_calls(
         );
 
         stats.num_draw_calls += 1;
+    }
+
+    if prev_dst.is_some() {
+        renderer.device.end_render_pass(StoreOp::Store);
     }
 }
 

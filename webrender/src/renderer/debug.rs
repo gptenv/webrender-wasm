@@ -12,7 +12,7 @@ use crate::debug_colors;
 use crate::debug_font_data;
 use crate::debug_item::DebugItem;
 use crate::device::{BlendMode, Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
-use crate::device::{DrawTarget, ReadTarget, TextureFlags};
+use crate::device::{DrawTarget, LoadOp, ReadTarget, RenderPassDescriptor, TextureFlags};
 use crate::device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
 use euclid::{rect, Point2D, Rect, Size2D, Transform3D, default};
 use crate::internal_types::{RenderTargetInfo, Swizzle};
@@ -543,7 +543,11 @@ pub fn bind_debug_overlay(
                     external_fbo_id: surface_info.fbo_id,
                     dimensions: surface_size,
                 };
-                device.bind_draw_target(draw_target);
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::DontCare,
+                });
 
                 // When native compositing, clear the debug overlay each frame.
                 device.clear_target(
@@ -558,19 +562,32 @@ pub fn bind_debug_overlay(
                 let compositor = compositor_config.layer_compositor().unwrap();
                 compositor.bind_layer(state.layer_index, &[]);
 
+                let draw_target = DrawTarget::new_default(device_size, device.surface_origin_is_top_left());
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::DontCare,
+                });
+
                 device.clear_target(
                     Some([0.0, 0.0, 0.0, 0.0]),
                     None, // debug renderer does not use depth
                     None,
                 );
 
-                Some(DrawTarget::new_default(device_size, device.surface_origin_is_top_left()))
+                Some(draw_target)
             }
             CompositorKind::Draw { .. } => {
-                // If we're not using the native compositor, then the default
-                // frame buffer is already bound. Create a DrawTarget for it and
-                // return it.
-                Some(DrawTarget::new_default(device_size, device.surface_origin_is_top_left()))
+                // If we're not using the native compositor, the overlay is drawn
+                // over the frame in the default frame buffer.
+                let draw_target = DrawTarget::new_default(device_size, device.surface_origin_is_top_left());
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::Load,
+                });
+
+                Some(draw_target)
             }
         }
     } else {
