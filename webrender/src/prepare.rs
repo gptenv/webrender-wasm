@@ -73,7 +73,6 @@ use crate::tile_cache::{SliceId, TileCacheInstance};
 use crate::prim_store::*;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
 use crate::render_backend::DataStores;
-use crate::scene_debug::{HighlightMode, SceneDebugOverride};
 
 
 use crate::render_task::{EmptyTask, RenderTask, RenderTaskKind};
@@ -268,62 +267,6 @@ fn prepare_prim_for_render(
     targets: &[CommandBufferIndex],
 ) {
     tracy_rs::profile_scope!("prepare_prim_for_render");
-
-    match frame_context.debug_override.highlight(prim_instance_index) {
-        Some(HighlightMode::Replace) => {
-            // Stand in for the primitive with a solid quad covering its
-            // clipped local rect. Pictures are not prepared at all, so their
-            // content is not rendered either.
-            let prim_info = *scratch.frame.draw(draw_index);
-            let coverage_rect = prim_info.clip_chain.local_coverage_rect;
-            if coverage_rect.is_empty() {
-                return;
-            }
-
-            quad::prepare_quad(
-                &SceneDebugOverride::HIGHLIGHT_COLOR,
-                &QuadDescriptor {
-                    pattern_rect: coverage_rect,
-                    bounds: coverage_rect,
-                    aligned_aa_edges: EdgeMask::empty(),
-                    transformed_aa_edges: EdgeMask::all(),
-                },
-                &None,
-                &prim_info.clip_chain,
-                quad_transform,
-                frame_context,
-                pic_context,
-                targets,
-                &data_stores.clip,
-                frame_state,
-                scratch,
-            );
-
-            return;
-        }
-        Some(HighlightMode::Overlay) => {
-            // Outline only, so the primitive's own content stays visible
-            // underneath. Debug items are drawn directly onto the framebuffer,
-            // so the rect is projected from the primitive's local space to
-            // world space (the root node's space, in device pixels).
-            let local_rect = scratch.frame.draw(draw_index).clip_chain.local_coverage_rect;
-            let world_rect = frame_context
-                .spatial_tree
-                .get_world_transform(cluster.spatial_node_index)
-                .into_transform()
-                .outer_transformed_box2d(&local_rect);
-
-            if let Some(world_rect) = world_rect {
-                scratch.push_debug_rect(
-                    world_rect.cast_unit(),
-                    2,
-                    SceneDebugOverride::HIGHLIGHT_COLOR,
-                    ColorF::TRANSPARENT,
-                );
-            }
-        }
-        None => {}
-    }
 
     // If we have dependencies, we need to prepare them first, in order
     // to know the actual rect of this primitive.

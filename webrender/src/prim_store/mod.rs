@@ -520,11 +520,6 @@ impl PrimitiveFrameScratch {
         }
     }
 
-    /// Number of primitive instances the draw storage was last reset for.
-    pub fn instance_count(&self) -> usize {
-        self.instance_to_draw.len()
-    }
-
     /// The draw pushed for a primitive instance this frame, if any.
     pub fn draw_index_for_instance(
         &self,

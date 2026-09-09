@@ -1011,11 +1011,6 @@ pub enum DebugCommand {
     /// Capture the next composited frame with RenderDoc, replying with the
     /// written .rdc path (or an error message).
     CaptureRenderDoc(Sender<crate::api::debugger::RenderDocReply>),
-    #[cfg(feature = "debugger")]
-    /// Replace the per-primitive debug override (disabled / highlighted
-    /// primitives) of the window's documents. Replies with an error message
-    /// if the override targets a stale scene generation.
-    SetSceneDebugOverride(crate::api::debugger::SceneDebugOverride, Sender<Result<(), String>>),
 }
 
 /// Initial state handed to `RenderBackend::register_window`.
