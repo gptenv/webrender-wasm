@@ -1851,7 +1851,6 @@ impl<'a> SceneBuilder<'a> {
             let clip_leaf_id = self.clip_tree_builder.build_for_prim(
                 clip_node_id,
                 info,
-                P::SNAP_CLIPS,
             );
 
             self.add_prim_to_draw_list(
@@ -3054,7 +3053,6 @@ impl<'a> SceneBuilder<'a> {
         let clip_leaf_id = self.clip_tree_builder.build_for_prim(
             clip_node_id,
             info,
-            true,
         );
 
         // Create the backdrop prim - this is a placeholder which sets the size of resolve

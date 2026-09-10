@@ -1117,15 +1117,9 @@ impl TileCacheInstance {
 
             let mut clip_snapper = SpaceSnapper::new(surface, frame_context.spatial_tree);
 
-            // The tile cache's shared clip is never a text run: it snaps its
-            // chain to nearest when it carries a real clip root, otherwise it
-            // leaves it exact (matching the device-space sentinel behavior).
-            let clip_snap = if frame_state.clip_tree.get_leaf(shared_clip_leaf_id).prim_clip_root
-                != ClipNodeId::INVALID {
-                ClipSnap::Nearest
-            } else {
-                ClipSnap::Exact
-            };
+            // A tile cache leaves its shared clip chain exact, like any other
+            // device-space content.
+            let clip_snap = ClipSnap::Exact;
 
             let clip_root = frame_state.current_clip_root();
 

@@ -186,9 +186,6 @@ impl intern::Internable for TextRun {
 }
 
 impl InternablePrimitive for TextRun {
-    // Text renders in device space; its clips must not snap (bug 2050692).
-    const SNAP_CLIPS: bool = false;
-
     fn into_key(
         self,
         info: &LayoutPrimitiveInfo,

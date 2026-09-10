@@ -178,19 +178,6 @@ impl ClipTreeNode {
 pub struct ClipTreeLeaf {
     pub node_id: ClipNodeId,
 
-    /// Boundary between this primitive's *own* clips and *inherited/shared*
-    /// clips in the `node_id` chain, and the primitive's snap policy in one
-    /// value. Nodes strictly below this one (nearer the leaf) are the prim's
-    /// own clips: they move with the prim and are snapped with it; this node and
-    /// its ancestors are inherited/shared clips, referenced by many prims
-    /// (including device-space text), and are never snapped so a shared clip
-    /// stays consistent across all consumers. Captured from the clip-tree
-    /// builder's inherited root when the leaf is built. The sentinel
-    /// `ClipNodeId::INVALID` means the primitive is device-space (text) and
-    /// snaps nothing (own clips included); derive `snaps = prim_clip_root !=
-    /// INVALID` (bug 2050692).
-    pub prim_clip_root: ClipNodeId,
-
     // TODO(gw): For now, this preserves the ability to build a culling rect
     //           from the supplied leaf local clip rect on the primitive. In
     //           future, we'll expand this to be more efficient by combining
@@ -209,11 +196,6 @@ pub struct ClipNodeId(u32);
 
 impl ClipNodeId {
     pub const NONE: ClipNodeId = ClipNodeId(0);
-    /// Sentinel used as a `ClipTreeLeaf::prim_clip_root` to mean the primitive
-    /// is device-space (text) and must not snap any of its clips. Never a real
-    /// node index. `NONE` can't be used since it is a valid top-level inherited
-    /// clip root.
-    pub const INVALID: ClipNodeId = ClipNodeId(u32::MAX);
 }
 
 impl std::fmt::Debug for ClipNodeId {
@@ -964,8 +946,7 @@ impl ClipTreeBuilder {
 
         self.tree.leaves.push(ClipTreeLeaf {
             node_id,
-            // Surfaces snap nothing and pass `max_rect` through.
-            prim_clip_root: ClipNodeId::INVALID,
+            // Tile caches pass `max_rect` through.
             unsnapped_local_clip_rect: LayoutRect::max_rect(),
         });
 
@@ -984,19 +965,10 @@ impl ClipTreeBuilder {
 
         let clip_leaf_id = ClipLeafId(self.tree.leaves.len() as u32);
 
-        // A picture snaps its own clips like any snapping prim: the boundary is
-        // the inherited clip root. This matters for a picture carrying a real
-        // image-mask clip (SVG clip-path / CSS mask) - the mask image is
-        // rasterized to the device grid, so the picture must snap the mask clip
-        // to stay aligned with it (bug 2050692). The leaf clip rect is still
-        // `max_rect`; the visibility pass passes `max_rect` through unsnapped
-        // regardless of snap policy, so this doesn't overflow the snap
-        // transform.
-        let prim_clip_root = self.clip_stack.last().unwrap().clip_node_id;
-
+        // The leaf clip rect is `max_rect`, which passes through unsnapped
+        // regardless of snap policy, so it can't overflow the snap transform.
         self.tree.leaves.push(ClipTreeLeaf {
             node_id,
-            prim_clip_root,
             unsnapped_local_clip_rect: LayoutRect::max_rect(),
         });
 
@@ -1008,38 +980,23 @@ impl ClipTreeBuilder {
         &mut self,
         clip_node_id: ClipNodeId,
         info: &LayoutPrimitiveInfo,
-        // False for device-space prims (text): the leaf is built to snap
-        // nothing (encoded as a `ClipNodeId::INVALID` prim_clip_root).
-        snap_clips: bool,
     ) -> ClipLeafId {
-        // The prim's own clips are `clip_node_id` (the `build_clip_set` result
-        // for this item), appended on top of the inherited clip root =
-        // `clip_stack.last().clip_node_id`. That inherited root is the
-        // own/shared boundary. Device-space prims snap nothing, so record the
-        // `INVALID` sentinel instead. This assumes the clip stack was not
-        // pushed/popped between `build_clip_set` and here (they run
-        // back-to-back per item) - asserted below.
-        let prim_clip_root = if snap_clips {
-            self.clip_stack.last().unwrap().clip_node_id
-        } else {
-            ClipNodeId::INVALID
-        };
-
         let node_id = clip_node_id;
 
-        // When snapping, `prim_clip_root` must be an ancestor of (or equal to)
-        // `node_id`, since `node_id` is built on top of it. If not, the clip
-        // stack was pushed/popped between `build_clip_set` and here and the
-        // boundary is wrong. (Skipped for the `INVALID` device-space sentinel.)
+        // `clip_node_id` is the `build_clip_set` result for this item, appended
+        // on top of the inherited clip root, so that root must be an ancestor
+        // of (or equal to) it. If it isn't, the clip stack was pushed or popped
+        // between `build_clip_set` and here, which run back-to-back per item.
         #[cfg(debug_assertions)]
-        if snap_clips {
+        {
+            let inherited_root = self.clip_stack.last().unwrap().clip_node_id;
             let mut cur = node_id;
-            while cur != prim_clip_root && cur != ClipNodeId::NONE {
+            while cur != inherited_root && cur != ClipNodeId::NONE {
                 cur = self.tree.nodes[cur.0 as usize].parent;
             }
             debug_assert_eq!(
-                cur, prim_clip_root,
-                "prim_clip_root is not an ancestor of the leaf node: clip-stack desync between build_clip_set and build_for_prim",
+                cur, inherited_root,
+                "inherited clip root is not an ancestor of the leaf node: clip-stack desync between build_clip_set and build_for_prim",
             );
         }
 
@@ -1047,7 +1004,6 @@ impl ClipTreeBuilder {
 
         self.tree.leaves.push(ClipTreeLeaf {
             node_id,
-            prim_clip_root,
             unsnapped_local_clip_rect: info.clip_rect,
         });
 
@@ -2537,55 +2493,6 @@ mod tests {
         assert_eq!(rad.bottom_right.width, 0.0);
     }
 
-    #[test]
-    fn device_text_runs_do_not_snap_their_clips() {
-        // Regression test for bug 2050692 (Slack channel-name last character cut
-        // off). A device-space text run must resolve its clips UNSNAPPED, or a
-        // fractional clip edge rounds inward onto the device grid and shaves the
-        // last glyph. That policy is carried on the clip leaf as
-        // `prim_clip_root == ClipNodeId::INVALID`, which the visibility and clip
-        // passes read as "snap nothing" (`snaps = prim_clip_root != INVALID`); a
-        // snapping primitive records a real `prim_clip_root` so its clips snap.
-        //
-        // The rendered difference is a sub-pixel clip shift that headless
-        // software rasterization collapses (it only bites once the compositor
-        // anti-aliases the clip edge, e.g. Windows at a fractional device scale),
-        // so it cannot be guarded by a reftest - hence this unit test on the
-        // snap-policy plumbing itself.
-        use crate::prim_store::text_run::TextRun;
-        use crate::prim_store::InternablePrimitive;
-
-        // Text runs are configured to snap no clips.
-        assert!(
-            !TextRun::SNAP_CLIPS,
-            "device-space text must not snap its clips (bug 2050692)",
-        );
-
-        let mut builder = ClipTreeBuilder::new();
-        let info = LayoutPrimitiveInfo::with_clip_rect(
-            lr(0.0, 0.0, 100.0, 100.0),
-            lr(0.0, 0.0, 100.0, 100.0),
-        );
-
-        // A text run (SNAP_CLIPS == false) records the INVALID snap sentinel.
-        let text_leaf =
-            builder.build_for_prim(ClipNodeId::NONE, &info, TextRun::SNAP_CLIPS);
-        assert_eq!(
-            builder.get_leaf(text_leaf).prim_clip_root,
-            ClipNodeId::INVALID,
-            "a device-space text run must record the INVALID snap sentinel so its clips are not snapped",
-        );
-
-        // A snapping primitive (backgrounds, borders, ...) records a real
-        // prim_clip_root, so its clips are snapped to the device grid.
-        let snapping_leaf =
-            builder.build_for_prim(ClipNodeId::NONE, &info, true);
-        assert_ne!(
-            builder.get_leaf(snapping_leaf).prim_clip_root,
-            ClipNodeId::INVALID,
-            "a snapping primitive must record a real prim_clip_root so its clips snap",
-        );
-    }
 
     #[test]
     fn test_intersect_linux_window_corners() {
