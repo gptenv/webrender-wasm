@@ -5,7 +5,7 @@
 use api::ColorF;
 use api::{ImageRendering, LineOrientation, PrimitiveFlags};
 use api::units::*;
-use crate::clip::{ClipLeafId, ClipNodeId};
+use crate::clip::ClipNodeId;
 use crate::render_backend::DataStores;
 use crate::space::SnapRounding;
 use crate::quad::QuadTileClassifier;
@@ -128,6 +128,7 @@ impl From<&LayoutPrimitiveInfo> for PrimKeyCommonData {
             aligned_aa_edges: info.aligned_aa_edges,
             transformed_aa_edges: info.transformed_aa_edges,
             prim_rect: info.rect.into(),
+            local_clip_rect: info.clip_rect.into(),
         }
     }
 }
@@ -148,6 +149,9 @@ pub struct PrimTemplateCommonData {
     /// Local-space rect of the primitive, as authored by the display list (not
     /// snapped to the device pixel grid). See `PrimKeyCommonData::prim_rect`.
     pub prim_rect: LayoutRect,
+    /// The primitive's own local clip rect, unsnapped. See
+    /// `PrimKeyCommonData::local_clip_rect`.
+    pub local_clip_rect: LayoutRect,
 }
 
 impl PrimTemplateCommonData {
@@ -157,6 +161,7 @@ impl PrimTemplateCommonData {
             aligned_aa_edges: common.aligned_aa_edges,
             transformed_aa_edges: common.transformed_aa_edges,
             prim_rect: common.prim_rect.into(),
+            local_clip_rect: common.local_clip_rect.into(),
         }
     }
 }
@@ -307,9 +312,6 @@ pub struct PrimitiveInstance {
     /// Where this primitive's clip chain starts in the clip tree. Walking from
     /// here up to the current clip root gives the clips that apply to it.
     pub clip_node_id: ClipNodeId,
-
-    /// Leaf holding this primitive's own local clip rect.
-    pub clip_leaf_id: ClipLeafId,
 }
 
 /// How a primitive's clips round to the device pixel grid. Distinct from how
@@ -340,12 +342,10 @@ impl PrimitiveInstance {
     pub fn new(
         kind: PrimitiveKind,
         clip_node_id: ClipNodeId,
-        clip_leaf_id: ClipLeafId,
     ) -> Self {
         PrimitiveInstance {
             kind,
             clip_node_id,
-            clip_leaf_id,
         }
     }
 
@@ -908,7 +908,7 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<PrimitiveInstance>(), 24, "PrimitiveInstance size changed");
+    assert_eq!(mem::size_of::<PrimitiveInstance>(), 20, "PrimitiveInstance size changed");
     assert_eq!(mem::size_of::<PrimitiveKind>(), 16, "PrimitiveKind size changed");
 }
 

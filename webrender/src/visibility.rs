@@ -36,7 +36,7 @@ use crate::composite::CompositeState;
 use crate::profiler::{self, TransactionProfile};
 use crate::renderer::GpuBufferBuilder;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
-use crate::clip::{ClipChainInstance, ClipTree, ClipNodeId};
+use crate::clip::{snap_local_clip_rect, ClipChainInstance, ClipTree, ClipNodeId};
 use crate::composite::CompositorSurfaceKind;
 use crate::frame_builder::FrameBuilderConfig;
 use crate::picture::ClusterFlags;
@@ -411,7 +411,6 @@ pub fn update_prim_visibility(
             // decoration lines) is decided by
             // `PrimitiveInstance::snap_policy`.
             let prim_instance = &frame_state.prim_instances[prim_instance_index];
-            let leaf_id = prim_instance.clip_leaf_id;
 
             let policy = prim_instance.snap_policy(frame_state.data_stores);
             let unsnapped_pattern_rect = frame_state.data_stores.prim_rect(prim_instance);
@@ -424,13 +423,11 @@ pub fn update_prim_visibility(
             draw.prim_instance_index = PrimitiveInstanceIndex(prim_instance_index as u32);
             draw.snapped_pattern_rect = snapped_pattern_rect;
 
-            // Snap the leaf's own clip rect against this cluster's spatial
-            // node, the same target `snapper` used for the prim rect above.
-            // Held as a local and handed to `set_active_clips` below rather
-            // than written back to the leaf, so the clip tree is not mutated
-            // during frame building.
-            let snapped_leaf_clip_rect = frame_state.clip_tree.snap_leaf_clip_rect(
-                leaf_id,
+            // Snap the prim's own local clip rect against this cluster's
+            // spatial node, the same target `snapper` used for the prim rect
+            // above.
+            let snapped_local_clip_rect = snap_local_clip_rect(
+                frame_state.data_stores.local_clip_rect(prim_instance),
                 &snapper,
                 policy.clip,
             );
@@ -500,7 +497,7 @@ pub fn update_prim_visibility(
                 policy.clip,
                 prim_instance.clip_node_id,
                 clip_root,
-                snapped_leaf_clip_rect,
+                snapped_local_clip_rect,
                 &frame_context.spatial_tree,
                 &frame_state.data_stores.clip,
                 frame_state.clip_tree,

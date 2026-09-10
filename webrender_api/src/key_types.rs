@@ -91,6 +91,12 @@ pub struct PrimKeyCommonData {
     /// away the external scroll offset in whole app units first, so scrolling
     /// does not change this.
     pub prim_rect: RectKey,
+    /// The primitive's own local clip rect, as authored by the display list and
+    /// likewise unsnapped. Distinct from the clip tree: this is the one clip
+    /// that belongs to the primitive itself rather than being shared through a
+    /// clip chain. Normalized by the same `normalize_common` pass as
+    /// `prim_rect`, so it is scroll-stable for the same reason.
+    pub local_clip_rect: RectKey,
 }
 
 /// A hashable vector for use as a fragment of an interning key; the raw `f32`

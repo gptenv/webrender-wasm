@@ -101,7 +101,7 @@ use crate::renderer::GpuBufferBuilderF;
 use crate::spatial_tree::{SceneSpatialTree, SpatialTree, SpatialNodeIndex};
 use crate::ellipse::Ellipse;
 use crate::intern;
-use crate::internal_types::{FastHashMap, FastHashSet, LayoutPrimitiveInfo};
+use crate::internal_types::{FastHashMap, FastHashSet};
 use crate::prim_store::{VisibleMaskImageTile};
 use crate::prim_store::{ClipSnap, RectKey, PolygonKey};
 use crate::render_task::RenderTask;
@@ -170,23 +170,6 @@ impl ClipTreeNode {
     }
 }
 
-/// A leaf node in a clip-tree. Any primitive that is clipped will have a handle to
-/// a clip-tree leaf.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(MallocSizeOf)]
-pub struct ClipTreeLeaf {
-    // TODO(gw): For now, this preserves the ability to build a culling rect
-    //           from the supplied leaf local clip rect on the primitive. In
-    //           future, we'll expand this to be more efficient by combining
-    //           it with compatible clip rects from the owning primitive's
-    //           `clip_node_id` chain.
-    /// Leaf-local clip rect as authored by the display list (not snapped to
-    /// the device pixel grid). The snapped form is derived per frame by the
-    /// visibility pass and handed to `set_active_clips`; it is not stored.
-    pub unsnapped_local_clip_rect: LayoutRect,
-}
-
 /// ID for a ClipTreeNode
 #[derive(Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -207,15 +190,26 @@ impl std::fmt::Debug for ClipNodeId {
     }
 }
 
-/// ID for a ClipTreeLeaf
-#[derive(Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct ClipLeafId(u32);
+/// Snap a primitive's own local clip rect for this frame, ready to seed
+/// `ClipStore::set_active_clips`. `snapper` must already target the owning
+/// primitive's spatial node.
+///
+/// A primitive with no local clip carries `max_rect` and passes through
+/// unchanged: snapping it would overflow the snap transform. Otherwise the rect
+/// rounds per the prim's clip policy - nearest for snapping prims (crisp fill
+/// and border edges), exact for device-space prims (bug 2050692).
+pub fn snap_local_clip_rect(
+    unsnapped: LayoutRect,
+    snapper: &SpaceSnapper,
+    clip_snap: ClipSnap,
+) -> LayoutRect {
+    if unsnapped == LayoutRect::max_rect() {
+        return unsnapped;
+    }
 
-impl std::fmt::Debug for ClipLeafId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "#{}", self.0)
+    match clip_snap {
+        ClipSnap::Nearest => snapper.snap_rect(&unsnapped),
+        ClipSnap::Exact => unsnapped,
     }
 }
 
@@ -224,7 +218,6 @@ impl std::fmt::Debug for ClipLeafId {
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ClipTree {
     nodes: Vec<ClipTreeNode>,
-    leaves: Vec<ClipTreeLeaf>,
 }
 
 impl ClipTree {
@@ -240,7 +233,6 @@ impl ClipTree {
                     parent: ClipNodeId::NONE,
                 }
             ],
-            leaves: Vec::new(),
         }
     }
 
@@ -255,7 +247,6 @@ impl ClipTree {
             parent: ClipNodeId::NONE,
         });
 
-        self.leaves.clear();
     }
 
     /// Add a set of clips to the provided tree node id, reusing existing
@@ -332,36 +323,6 @@ impl ClipTree {
     }
 
     /// Retrieve a clip tree leaf by id
-    pub fn get_leaf(&self, id: ClipLeafId) -> &ClipTreeLeaf {
-        &self.leaves[id.0 as usize]
-    }
-
-    /// Snap a leaf's own clip rect for this frame, ready to seed
-    /// `ClipStore::set_active_clips`. `snapper` must already target the owning
-    /// primitive's spatial node.
-    ///
-    /// Picture / tile-cache leaves carry `max_rect` and pass through unchanged:
-    /// snapping it would overflow the snap transform. Otherwise the rect rounds
-    /// per the prim's clip policy - nearest for snapping prims (crisp fill and
-    /// border edges), exact for device-space prims (bug 2050692).
-    pub fn snap_leaf_clip_rect(
-        &self,
-        id: ClipLeafId,
-        snapper: &SpaceSnapper,
-        clip_snap: ClipSnap,
-    ) -> LayoutRect {
-        let unsnapped = self.get_leaf(id).unsnapped_local_clip_rect;
-
-        if unsnapped == LayoutRect::max_rect() {
-            return unsnapped;
-        }
-
-        match clip_snap {
-            ClipSnap::Nearest => snapper.snap_rect(&unsnapped),
-            ClipSnap::Exact => unsnapped,
-        }
-    }
-
     /// Debug print the clip-tree
     #[allow(unused)]
     pub fn print(&self) {
@@ -384,24 +345,8 @@ impl ClipTree {
             pt.end_level();
         }
 
-        fn print_leaf<T: crate::print_tree::PrintTreePrinter>(
-            id: ClipLeafId,
-            leaves: &[ClipTreeLeaf],
-            pt: &mut T,
-        ) {
-            let leaf = &leaves[id.0 as usize];
-
-            pt.new_level(format!("{:?}", id));
-            pt.add_item(format!("unsnapped_local_clip_rect: {:?}", leaf.unsnapped_local_clip_rect));
-            pt.end_level();
-        }
-
         let mut pt = PrintTree::new("clip tree");
         print_node(ClipNodeId::NONE, &self.nodes, &mut pt);
-
-        for i in 0 .. self.leaves.len() {
-            print_leaf(ClipLeafId(i as u32), &self.leaves, &mut pt);
-        }
     }
 
     /// Find the lowest common ancestor of two clip tree nodes. This is useful
@@ -906,7 +851,6 @@ impl ClipTreeBuilder {
         // building can happen again.
         std::mem::replace(&mut self.tree, ClipTree {
             nodes: Vec::new(),
-            leaves: Vec::new(),
         })
     }
 
@@ -918,10 +862,6 @@ impl ClipTreeBuilder {
     }
 
     /// Get a clip leaf by id
-    pub fn get_leaf(&self, id: ClipLeafId) -> &ClipTreeLeaf {
-        &self.tree.leaves[id.0 as usize]
-    }
-
     /// Build a clip-leaf for a tile-cache
     pub fn build_for_tile_cache(
         &mut self,
@@ -941,50 +881,28 @@ impl ClipTreeBuilder {
         )
     }
 
-    /// Build a clip-leaf for a picture. A picture has no local clip rect of its
-    /// own; `max_rect` passes through unsnapped regardless of snap policy, so
-    /// it can't overflow the snap transform.
-    pub fn build_for_picture(&mut self) -> ClipLeafId {
-        let clip_leaf_id = ClipLeafId(self.tree.leaves.len() as u32);
+    /// Check that `clip_node_id`, the `build_clip_set` result for an item, was
+    /// built on top of the clip stack's current inherited root - so that root
+    /// must be an ancestor of (or equal to) it. If it isn't, the clip stack was
+    /// pushed or popped between `build_clip_set` and here, which run
+    /// back-to-back per item.
+    #[cfg(debug_assertions)]
+    pub fn debug_check_clip_stack(&self, clip_node_id: ClipNodeId) {
+        let inherited_root = self.clip_stack.last().unwrap().clip_node_id;
+        let mut cur = clip_node_id;
 
-        self.tree.leaves.push(ClipTreeLeaf {
-            unsnapped_local_clip_rect: LayoutRect::max_rect(),
-        });
-
-        clip_leaf_id
-    }
-
-    /// Build a clip-leaf for a normal primitive
-    pub fn build_for_prim(
-        &mut self,
-        clip_node_id: ClipNodeId,
-        info: &LayoutPrimitiveInfo,
-    ) -> ClipLeafId {
-        // `clip_node_id` is the `build_clip_set` result for this item, appended
-        // on top of the inherited clip root, so that root must be an ancestor
-        // of (or equal to) it. If it isn't, the clip stack was pushed or popped
-        // between `build_clip_set` and here, which run back-to-back per item.
-        #[cfg(debug_assertions)]
-        {
-            let inherited_root = self.clip_stack.last().unwrap().clip_node_id;
-            let mut cur = clip_node_id;
-            while cur != inherited_root && cur != ClipNodeId::NONE {
-                cur = self.tree.nodes[cur.0 as usize].parent;
-            }
-            debug_assert_eq!(
-                cur, inherited_root,
-                "inherited clip root is not an ancestor of the leaf node: clip-stack desync between build_clip_set and build_for_prim",
-            );
+        while cur != inherited_root && cur != ClipNodeId::NONE {
+            cur = self.tree.nodes[cur.0 as usize].parent;
         }
 
-        let clip_leaf_id = ClipLeafId(self.tree.leaves.len() as u32);
-
-        self.tree.leaves.push(ClipTreeLeaf {
-            unsnapped_local_clip_rect: info.clip_rect,
-        });
-
-        clip_leaf_id
+        debug_assert_eq!(
+            cur, inherited_root,
+            "inherited clip root is not an ancestor of the prim's clip node: clip-stack desync between build_clip_set and the prim being added",
+        );
     }
+
+    #[cfg(not(debug_assertions))]
+    pub fn debug_check_clip_stack(&self, _clip_node_id: ClipNodeId) {}
 
     // Find the LCA for two given clip nodes
     pub fn find_lowest_common_ancestor(
@@ -1468,12 +1386,11 @@ impl ClipStore {
         // handled by the enclosing surface, so this primitive can ignore them.
         // Frame state owned by the visibility traversal, not the scene's tree.
         clip_root: ClipNodeId,
-        // The leaf's own clip rect, already snapped by the caller against the
-        // owning prim's spatial node (`ClipTree::snap_leaf_clip_rect`). Passed
-        // in rather than read from the leaf so the tree stays immutable during
-        // frame building, and so it is snapped by the prim's own snapper -
-        // `snapper` here is re-targeted per clip node in the loop below.
-        snapped_leaf_clip_rect: LayoutRect,
+        // The prim's own local clip rect, already snapped by the caller against
+        // its spatial node (`snap_local_clip_rect`). Passed in rather than
+        // snapped here because `snapper` is re-targeted per clip node in the
+        // loop below, so it no longer targets the prim.
+        snapped_local_clip_rect: LayoutRect,
         spatial_tree: &SpatialTree,
         clip_data_store: &ClipDataStore,
         clip_tree: &ClipTree,
@@ -1490,7 +1407,7 @@ impl ClipStore {
         // prim (text run or surface) leaves its clips exact so they stay at the
         // sub-pixel position matching its contents (bug 2050692). The leaf clip
         // rect was pre-snapped accordingly by the caller.
-        let mut local_clip_rect = snapped_leaf_clip_rect;
+        let mut local_clip_rect = snapped_local_clip_rect;
         let mut current = clip_node_id;
 
         while current != clip_root && current != ClipNodeId::NONE {
