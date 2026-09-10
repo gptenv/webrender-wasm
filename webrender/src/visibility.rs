@@ -46,7 +46,7 @@ use crate::tile_cache::TileCacheInstance;
 use crate::picture::{PictureScratch, RasterConfig};
 use crate::surface::SurfaceIndex;
 use crate::tile_cache::SubSliceIndex;
-use crate::prim_store::{ClipSnap, ClipTaskIndex, PictureIndex, PrimitiveKind};
+use crate::prim_store::{ClipTaskIndex, PictureIndex, PrimitiveKind};
 use crate::prim_store::{PrimitiveStore, PrimitiveInstance, PrimitiveInstanceIndex};
 use crate::prim_store::storage;
 use crate::prim_store::text_run::TextRunScratch;
@@ -393,20 +393,16 @@ pub fn update_prim_visibility(
             draw.prim_instance_index = PrimitiveInstanceIndex(prim_instance_index as u32);
             draw.snapped_pattern_rect = snapped_pattern_rect;
 
-            // Picture / tile-cache leaves carry `max_rect` (snapping it would
-            // overflow the snap transform); pass those through. Otherwise the
-            // leaf clip rounds per the prim's clip policy: nearest for snapping
-            // prims (crisp fill/border edges), exact for device-space prims.
-            let leaf = frame_state.clip_tree.get_leaf_mut(leaf_id);
-            let unsnapped = leaf.unsnapped_local_clip_rect;
-            leaf.snapped_local_clip_rect = if unsnapped == LayoutRect::max_rect() {
-                unsnapped
-            } else {
-                match policy.clip {
-                    ClipSnap::Nearest => snapper.snap_rect(&unsnapped),
-                    ClipSnap::Exact => unsnapped,
-                }
-            };
+            // Snap the leaf's own clip rect against this cluster's spatial
+            // node, the same target `snapper` used for the prim rect above.
+            // Held as a local and handed to `set_active_clips` below rather
+            // than written back to the leaf, so the clip tree is not mutated
+            // during frame building.
+            let snapped_leaf_clip_rect = frame_state.clip_tree.snap_leaf_clip_rect(
+                leaf_id,
+                &snapper,
+                policy.clip,
+            );
 
             if let PrimitiveKind::Picture { pic_index, .. } = frame_state.prim_instances[prim_instance_index].kind {
                 if !store.pictures[pic_index.0].is_visible(frame_context.spatial_tree) {
@@ -470,6 +466,7 @@ pub fn update_prim_visibility(
                 &mut clip_snapper,
                 policy.clip,
                 prim_instance.clip_leaf_id,
+                snapped_leaf_clip_rect,
                 &frame_context.spatial_tree,
                 &frame_state.data_stores.clip,
                 frame_state.clip_tree,

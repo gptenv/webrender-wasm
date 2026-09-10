@@ -196,14 +196,9 @@ pub struct ClipTreeLeaf {
     //           future, we'll expand this to be more efficient by combining
     //           it will compatible clip rects from the `node_id`.
     /// Leaf-local clip rect as authored by the display list (not snapped to
-    /// the device pixel grid).
+    /// the device pixel grid). The snapped form is derived per frame by the
+    /// visibility pass and handed to `set_active_clips`; it is not stored.
     pub unsnapped_local_clip_rect: LayoutRect,
-    /// `unsnapped_local_clip_rect` snapped against the current spatial tree
-    /// in the owning primitive's cluster spatial-node space. Written each
-    /// frame by the visibility pass from the cluster loop, using the cluster's
-    /// (resolved) spatial node as the snap target. Picture / tile-cache leaves
-    /// carry `max_rect` and pass through unchanged.
-    pub snapped_local_clip_rect: LayoutRect,
 }
 
 /// ID for a ClipTreeNode
@@ -384,11 +379,30 @@ impl ClipTree {
         &self.leaves[id.0 as usize]
     }
 
-    /// Mutable accessor for a single leaf. Used by the visibility pass from
-    /// inside the cluster loop to refresh `snapped_local_clip_rect` against
-    /// the same spatial node as the owning prim's rect.
-    pub fn get_leaf_mut(&mut self, id: ClipLeafId) -> &mut ClipTreeLeaf {
-        &mut self.leaves[id.0 as usize]
+    /// Snap a leaf's own clip rect for this frame, ready to seed
+    /// `ClipStore::set_active_clips`. `snapper` must already target the owning
+    /// primitive's spatial node.
+    ///
+    /// Picture / tile-cache leaves carry `max_rect` and pass through unchanged:
+    /// snapping it would overflow the snap transform. Otherwise the rect rounds
+    /// per the prim's clip policy - nearest for snapping prims (crisp fill and
+    /// border edges), exact for device-space prims (bug 2050692).
+    pub fn snap_leaf_clip_rect(
+        &self,
+        id: ClipLeafId,
+        snapper: &SpaceSnapper,
+        clip_snap: ClipSnap,
+    ) -> LayoutRect {
+        let unsnapped = self.get_leaf(id).unsnapped_local_clip_rect;
+
+        if unsnapped == LayoutRect::max_rect() {
+            return unsnapped;
+        }
+
+        match clip_snap {
+            ClipSnap::Nearest => snapper.snap_rect(&unsnapped),
+            ClipSnap::Exact => unsnapped,
+        }
     }
 
     /// Debug print the clip-tree
@@ -978,7 +992,6 @@ impl ClipTreeBuilder {
             // Surfaces snap nothing and pass `max_rect` through.
             prim_clip_root: ClipNodeId::INVALID,
             unsnapped_local_clip_rect: LayoutRect::max_rect(),
-            snapped_local_clip_rect: LayoutRect::max_rect(),
         });
 
         clip_leaf_id
@@ -1010,7 +1023,6 @@ impl ClipTreeBuilder {
             node_id,
             prim_clip_root,
             unsnapped_local_clip_rect: LayoutRect::max_rect(),
-            snapped_local_clip_rect: LayoutRect::max_rect(),
         });
 
         clip_leaf_id
@@ -1062,7 +1074,6 @@ impl ClipTreeBuilder {
             node_id,
             prim_clip_root,
             unsnapped_local_clip_rect: info.clip_rect,
-            snapped_local_clip_rect: LayoutRect::zero(),
         });
 
         clip_leaf_id
@@ -1544,6 +1555,12 @@ impl ClipStore {
         snapper: &mut SpaceSnapper,
         clip_snap: ClipSnap,
         clip_leaf_id: ClipLeafId,
+        // The leaf's own clip rect, already snapped by the caller against the
+        // owning prim's spatial node (`ClipTree::snap_leaf_clip_rect`). Passed
+        // in rather than read from the leaf so the tree stays immutable during
+        // frame building, and so it is snapped by the prim's own snapper -
+        // `snapper` here is re-targeted per clip node in the loop below.
+        snapped_leaf_clip_rect: LayoutRect,
         spatial_tree: &SpatialTree,
         clip_data_store: &ClipDataStore,
         clip_tree: &ClipTree,
@@ -1562,8 +1579,8 @@ impl ClipStore {
         // on the same grid as the prim's own snapped geometry; a device-space
         // prim (text run or surface) leaves its clips exact so they stay at the
         // sub-pixel position matching its contents (bug 2050692). The leaf clip
-        // rect was pre-snapped accordingly by the visibility pass.
-        let mut local_clip_rect = clip_leaf.snapped_local_clip_rect;
+        // rect was pre-snapped accordingly by the caller.
+        let mut local_clip_rect = snapped_leaf_clip_rect;
         let mut current = clip_leaf.node_id;
 
         while current != clip_root && current != ClipNodeId::NONE {
