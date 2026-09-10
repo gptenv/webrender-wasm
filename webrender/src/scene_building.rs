@@ -54,7 +54,7 @@ use api::prim_geometry::{
 };
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::clip::{ClipIntern, ClipItemKey, ClipItemKeyKind, ClipStore};
-use crate::clip::{ClipInternData, ClipNodeId};
+use crate::clip::{ClipInternData, ClipNodeId, ClipLeafId};
 use crate::clip::{PolygonDataHandle, ClipTreeBuilder};
 use crate::gpu_types::BlurEdgeMode;
 use crate::segment::EdgeMask;
@@ -261,6 +261,7 @@ impl PictureChainBuilder {
         interners: &mut Interners,
         prim_store: &mut PrimitiveStore,
         prim_instances: &mut Vec<PrimitiveInstance>,
+        clip_tree_builder: &mut ClipTreeBuilder,
     ) -> PictureChainBuilder {
         let prim_list = match self.current {
             PictureSource::PrimitiveList { prim_list } => {
@@ -272,11 +273,10 @@ impl PictureChainBuilder {
                 prim_list.add_prim(
                     instance,
                     LayoutRect::zero(),
-                    // A picture has no local clip rect of its own.
-                    LayoutRect::max_rect(),
                     self.spatial_node_index,
                     self.flags,
                     prim_instances,
+                    clip_tree_builder,
                 );
 
                 prim_list
@@ -300,7 +300,7 @@ impl PictureChainBuilder {
                 self.raster_space,
                 flags,
                 None,
-            )) as u32
+            ))
         );
 
         let instance = create_prim_instance(
@@ -309,6 +309,7 @@ impl PictureChainBuilder {
             self.raster_space,
             clip_node_id,
             interners,
+            clip_tree_builder,
         );
 
         PictureChainBuilder {
@@ -330,6 +331,7 @@ impl PictureChainBuilder {
         clip_node_id: ClipNodeId,
         interners: &mut Interners,
         prim_store: &mut PrimitiveStore,
+        clip_tree_builder: &mut ClipTreeBuilder,
         snapshot: Option<SnapshotInfo>,
     ) -> PrimitiveInstance {
         let mut flags = PictureFlags::empty();
@@ -340,7 +342,7 @@ impl PictureChainBuilder {
         match self.current {
             PictureSource::WrappedPicture { instance } => {
                 let pic_index = instance.kind.as_pic();
-                let picture = &mut prim_store.pictures[pic_index.0 as usize];
+                let picture = &mut prim_store.pictures[pic_index.0];
                 picture.flags |= flags;
                 picture.snapshot = snapshot;
 
@@ -370,7 +372,7 @@ impl PictureChainBuilder {
                         self.raster_space,
                         flags,
                         snapshot,
-                    )) as u32
+                    ))
                 );
 
                 create_prim_instance(
@@ -379,6 +381,7 @@ impl PictureChainBuilder {
                     self.raster_space,
                     clip_node_id,
                     interners,
+                    clip_tree_builder,
                 )
             }
         }
@@ -663,7 +666,7 @@ impl<'a> SceneBuilder<'a> {
         // Extract the prim_list (borrow check) and select the spatial node to
         // assign to unknown clusters
         let (mut prim_list, spatial_node_index) = {
-            let pic = &mut pictures[pic_index.0 as usize];
+            let pic = &mut pictures[pic_index.0];
             assert_ne!(pic.spatial_node_index, SpatialNodeIndex::UNKNOWN);
 
             // If we're a surface, use that spatial node, otherwise the parent
@@ -699,7 +702,7 @@ impl<'a> SceneBuilder<'a> {
         // *must* be extracted from the snapshot, so we rely on this optimization
         // taking out parent clips and it overrides other conditions.
         // In addition we need to ensure that only parent clips are extracted.
-        let is_snapshot = pictures[pic_index.0 as usize].snapshot.is_some();
+        let is_snapshot = pictures[pic_index.0].snapshot.is_some();
 
         if is_snapshot {
             // In the general case, if all of the children of a picture share the
@@ -713,22 +716,22 @@ impl<'a> SceneBuilder<'a> {
             // snapshot even when all children of the snapshotted picture share
             // a clip.
             if let Some(idx) = prim_index {
-                let clip_node = prim_instances[idx].clip_node_id;
+                let clip_node = clip_tree_builder.get_leaf(prim_instances[idx].clip_leaf_id).node_id;
                 shared_clip_node_id = clip_tree_builder.get_parent(clip_node);
             }
         } else {
             for cluster in &prim_list.clusters {
                 for prim_instance in &prim_instances[cluster.prim_range()] {
-                    let node_id = prim_instance.clip_node_id;
+                    let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
 
                     shared_clip_node_id = match shared_clip_node_id {
                         Some(current) => {
                             Some(clip_tree_builder.find_lowest_common_ancestor(
                                 current,
-                                node_id,
+                                leaf.node_id,
                             ))
                         }
-                        None => Some(node_id)
+                        None => Some(leaf.node_id)
                     };
                 }
             }
@@ -748,7 +751,7 @@ impl<'a> SceneBuilder<'a> {
         let lca_clip_rect = lca_tree_node
             .map(|tree_node| tree_node.unsnapped_clip_rect);
         let pic_node_id = prim_index
-            .map(|prim_index| prim_instances[prim_index].clip_node_id)
+            .map(|prim_index| clip_tree_builder.get_leaf(prim_instances[prim_index].clip_leaf_id).node_id)
             .and_then(|node_id| (node_id != ClipNodeId::NONE).then_some(node_id));
         let pic_tree_node = pic_node_id
             .map(|node_id| clip_tree_builder.get_node(node_id));
@@ -762,7 +765,7 @@ impl<'a> SceneBuilder<'a> {
         // part of compositing the picture.  However, this is not true if the
         // picture includes a blur filter as the blur result depends on the
         // offscreen pixels which may or may not be cropped away.
-        let has_blur = match &pictures[pic_index.0 as usize].composite_mode {
+        let has_blur = match &pictures[pic_index.0].composite_mode {
             Some(PictureCompositeMode::Filter(Filter::Blur { .. })) => true,
             Some(PictureCompositeMode::Filter(Filter::DropShadows { .. })) => true,
             Some(PictureCompositeMode::SVGFEGraph( .. )) => true,
@@ -794,14 +797,14 @@ impl<'a> SceneBuilder<'a> {
         });
 
         if should_set_clip_root {
-            pictures[pic_index.0 as usize].clip_root = shared_clip_node_id;
+            pictures[pic_index.0].clip_root = shared_clip_node_id;
         }
 
         // Update the spatial node of any child pictures
         for cluster in &prim_list.clusters {
             for prim_instance_index in cluster.prim_range() {
                 if let PrimitiveKind::Picture { pic_index: child_pic_index, .. } = prim_instances[prim_instance_index].kind {
-                    let child_pic = &mut pictures[child_pic_index.0 as usize];
+                    let child_pic = &mut pictures[child_pic_index.0];
 
                     if child_pic.spatial_node_index == SpatialNodeIndex::UNKNOWN {
                         child_pic.spatial_node_index = spatial_node_index;
@@ -822,7 +825,7 @@ impl<'a> SceneBuilder<'a> {
         }
 
         // Restore the prim_list
-        pictures[pic_index.0 as usize].prim_list = prim_list;
+        pictures[pic_index.0].prim_list = prim_list;
     }
 
     fn build_spatial_tree_for_display_list(
@@ -1747,7 +1750,7 @@ impl<'a> SceneBuilder<'a> {
     fn create_primitive<P>(
         &mut self,
         info: &LayoutPrimitiveInfo,
-        clip_node_id: ClipNodeId,
+        clip_leaf_id: ClipLeafId,
         prim: P,
     ) -> PrimitiveInstance
     where
@@ -1769,7 +1772,7 @@ impl<'a> SceneBuilder<'a> {
 
         PrimitiveInstance::new(
             instance_kind,
-            clip_node_id,
+            clip_leaf_id,
         )
     }
 
@@ -1797,7 +1800,6 @@ impl<'a> SceneBuilder<'a> {
         &mut self,
         prim_instance: PrimitiveInstance,
         prim_rect: LayoutRect,
-        prim_local_clip_rect: LayoutRect,
         spatial_node_index: SpatialNodeIndex,
         flags: PrimitiveFlags,
     ) {
@@ -1811,17 +1813,16 @@ impl<'a> SceneBuilder<'a> {
                 stacking_context.prim_list.add_prim(
                     prim_instance,
                     prim_rect,
-                    prim_local_clip_rect,
                     spatial_node_index,
                     flags,
                     &mut self.prim_instances,
+                    &self.clip_tree_builder,
                 );
             }
             None => {
                 self.tile_cache_builder.add_prim(
                     prim_instance,
                     prim_rect,
-                    prim_local_clip_rect,
                     spatial_node_index,
                     flags,
                     self.spatial_tree,
@@ -1847,12 +1848,16 @@ impl<'a> SceneBuilder<'a> {
         Interners: AsMut<Interner<P>>,
     {
         if prim.is_visible() {
-            self.clip_tree_builder.debug_check_clip_stack(clip_node_id);
+            let clip_leaf_id = self.clip_tree_builder.build_for_prim(
+                clip_node_id,
+                info,
+                P::SNAP_CLIPS,
+            );
 
             self.add_prim_to_draw_list(
                 info,
                 spatial_node_index,
-                clip_node_id,
+                clip_leaf_id,
                 prim,
             );
         }
@@ -1863,7 +1868,7 @@ impl<'a> SceneBuilder<'a> {
         &mut self,
         info: &LayoutPrimitiveInfo,
         spatial_node_index: SpatialNodeIndex,
-        clip_node_id: ClipNodeId,
+        clip_leaf_id: ClipLeafId,
         prim: P,
     )
     where
@@ -1872,13 +1877,12 @@ impl<'a> SceneBuilder<'a> {
     {
         let prim_instance = self.create_primitive(
             info,
-            clip_node_id,
+            clip_leaf_id,
             prim,
         );
         self.add_primitive_to_draw_list(
             prim_instance,
             info.rect,
-            info.clip_rect,
             spatial_node_index,
             info.flags,
         );
@@ -2002,6 +2006,7 @@ impl<'a> SceneBuilder<'a> {
                     &mut self.interners,
                     Some(PictureCompositeMode::Blit(BlitReason::PRESERVE3D)),
                     flat_items_context_3d,
+                    &mut self.clip_tree_builder,
                 );
                 let extra_instance = extra_instance.map(|(_, instance)| {
                     ExtendedPrimitiveInstance {
@@ -2238,7 +2243,7 @@ impl<'a> SceneBuilder<'a> {
                         stacking_context.raster_space,
                         PictureFlags::empty(),
                         None,
-                    )) as u32
+                    ))
                 );
 
                 let instance = create_prim_instance(
@@ -2247,6 +2252,7 @@ impl<'a> SceneBuilder<'a> {
                     stacking_context.raster_space,
                     stacking_context.clip_node_id,
                     &mut self.interners,
+                    &mut self.clip_tree_builder,
                 );
 
                 PictureChainBuilder::from_instance(
@@ -2282,7 +2288,7 @@ impl<'a> SceneBuilder<'a> {
                             stacking_context.raster_space,
                             PictureFlags::empty(),
                             None,
-                        )) as u32
+                        ))
                     );
 
                     let instance = create_prim_instance(
@@ -2291,6 +2297,7 @@ impl<'a> SceneBuilder<'a> {
                         stacking_context.raster_space,
                         stacking_context.clip_node_id,
                         &mut self.interners,
+                        &mut self.clip_tree_builder,
                     );
 
                     PictureChainBuilder::from_instance(
@@ -2311,6 +2318,7 @@ impl<'a> SceneBuilder<'a> {
                 ClipNodeId::NONE,
                 &mut self.interners,
                 &mut self.prim_store,
+                &mut self.clip_tree_builder,
                 None,
             );
 
@@ -2348,11 +2356,10 @@ impl<'a> SceneBuilder<'a> {
                 prim_list.add_prim(
                     ext_prim.instance,
                     LayoutRect::zero(),
-                    // A picture has no local clip rect of its own.
-                    LayoutRect::max_rect(),
                     ext_prim.spatial_node_index,
                     ext_prim.flags,
                     &mut self.prim_instances,
+                    &self.clip_tree_builder,
                 );
             }
 
@@ -2367,7 +2374,7 @@ impl<'a> SceneBuilder<'a> {
                 // that make up this context and disable the off-screen surface and
                 // 3d render context.
                 for child_pic_index in &prim_list.child_pictures {
-                    let child_pic = &mut self.prim_store.pictures[child_pic_index.0 as usize];
+                    let child_pic = &mut self.prim_store.pictures[child_pic_index.0];
                     let needs_surface = child_pic.snapshot.is_some();
                     if !needs_surface {
                         child_pic.composite_mode = None;
@@ -2390,7 +2397,7 @@ impl<'a> SceneBuilder<'a> {
                     stacking_context.raster_space,
                     PictureFlags::empty(),
                     None,
-                )) as u32
+                ))
             );
 
             let instance = create_prim_instance(
@@ -2399,6 +2406,7 @@ impl<'a> SceneBuilder<'a> {
                 stacking_context.raster_space,
                 stacking_context.clip_node_id,
                 &mut self.interners,
+                &mut self.clip_tree_builder,
             );
 
             source = PictureChainBuilder::from_instance(
@@ -2442,6 +2450,7 @@ impl<'a> SceneBuilder<'a> {
                 &mut self.interners,
                 &mut self.prim_store,
                 &mut self.prim_instances,
+                &mut self.clip_tree_builder,
             );
         }
 
@@ -2451,6 +2460,7 @@ impl<'a> SceneBuilder<'a> {
             stacking_context.clip_node_id,
             &mut self.interners,
             &mut self.prim_store,
+            &mut self.clip_tree_builder,
             stacking_context.composite_ops.snapshot,
         );
 
@@ -2471,11 +2481,10 @@ impl<'a> SceneBuilder<'a> {
                 parent_sc.prim_list.add_prim(
                     cur_instance,
                     LayoutRect::zero(),
-                    // A picture has no local clip rect of its own.
-                    LayoutRect::max_rect(),
                     stacking_context.spatial_node_index,
                     stacking_context.prim_flags,
                     &mut self.prim_instances,
+                    &self.clip_tree_builder,
                 );
                 None
             }
@@ -2484,8 +2493,6 @@ impl<'a> SceneBuilder<'a> {
                 self.add_primitive_to_draw_list(
                     cur_instance,
                     LayoutRect::zero(),
-                    // A picture has no local clip rect of its own.
-                    LayoutRect::max_rect(),
                     stacking_context.spatial_node_index,
                     stacking_context.prim_flags,
                 );
@@ -3044,13 +3051,17 @@ impl<'a> SceneBuilder<'a> {
         // Ensure we create a clip-chain for the capture primitive that matches
         // the render primitive, otherwise one might get culled while the other
         // is considered visible.
-        self.clip_tree_builder.debug_check_clip_stack(clip_node_id);
+        let clip_leaf_id = self.clip_tree_builder.build_for_prim(
+            clip_node_id,
+            info,
+            true,
+        );
 
         // Create the backdrop prim - this is a placeholder which sets the size of resolve
         // picture that reads from the backdrop root
         let backdrop_capture_instance = self.create_primitive(
             info,
-            clip_node_id,
+            clip_leaf_id,
             BackdropCapture {
             },
         );
@@ -3061,10 +3072,10 @@ impl<'a> SceneBuilder<'a> {
         prim_list.add_prim(
             backdrop_capture_instance,
             info.rect,
-            info.clip_rect,
             spatial_node_index,
             info.flags,
             &mut self.prim_instances,
+            &self.clip_tree_builder,
         );
 
         let mut source = PictureChainBuilder::from_prim_list(
@@ -3099,12 +3110,14 @@ impl<'a> SceneBuilder<'a> {
                 &mut self.interners,
                 &mut self.prim_store,
                 &mut self.prim_instances,
+                &mut self.clip_tree_builder,
             );
 
             let filtered_instance = source.finalize(
                 clip_node_id,
                 &mut self.interners,
                 &mut self.prim_store,
+                &mut self.clip_tree_builder,
                 None,
             );
 
@@ -3126,19 +3139,16 @@ impl<'a> SceneBuilder<'a> {
                     self.sc_stack[sc_index].prim_list.add_prim(
                         filtered_instance,
                         info.rect,
-                        // A picture has no local clip rect of its own.
-                        LayoutRect::max_rect(),
                         filter_spatial_node_index,
                         info.flags,
                         &mut self.prim_instances,
+                        &self.clip_tree_builder,
                     );
                 }
                 None => {
                     self.tile_cache_builder.add_prim(
                         filtered_instance,
                         info.rect,
-                        // A picture has no local clip rect of its own.
-                        LayoutRect::max_rect(),
                         filter_spatial_node_index,
                         info.flags,
                         self.spatial_tree,
@@ -3152,7 +3162,7 @@ impl<'a> SceneBuilder<'a> {
             // Add the prim that renders the result of the backdrop filter chain
             let mut backdrop_render_instance = self.create_primitive(
                 info,
-                clip_node_id,
+                clip_leaf_id,
                 BackdropRender {
                 },
             );
@@ -3170,7 +3180,6 @@ impl<'a> SceneBuilder<'a> {
             self.add_primitive_to_draw_list(
                 backdrop_render_instance,
                 info.rect,
-                info.clip_rect,
                 spatial_node_index,
                 info.flags,
             );
@@ -3672,6 +3681,7 @@ impl<'a> SceneBuilder<'a> {
                 &mut self.interners,
                 &mut self.prim_store,
                 &mut self.prim_instances,
+                &mut self.clip_tree_builder,
             );
 
             return source;
@@ -3740,6 +3750,7 @@ impl<'a> SceneBuilder<'a> {
                 &mut self.interners,
                 &mut self.prim_store,
                 &mut self.prim_instances,
+                &mut self.clip_tree_builder,
             );
         }
 
@@ -3877,6 +3888,7 @@ impl FlattenedStackingContext {
         interners: &mut Interners,
         composite_mode: Option<PictureCompositeMode>,
         flat_items_context_3d: Picture3DContext<OrderedPictureChild>,
+        clip_tree_builder: &mut ClipTreeBuilder,
     ) -> Option<(PictureIndex, PrimitiveInstance)> {
         if self.prim_list.is_empty() {
             return None
@@ -3893,7 +3905,7 @@ impl FlattenedStackingContext {
                 self.raster_space,
                 PictureFlags::empty(),
                 None
-            )) as u32
+            ))
         );
 
         let prim_instance = create_prim_instance(
@@ -3902,6 +3914,7 @@ impl FlattenedStackingContext {
             self.raster_space,
             self.clip_node_id,
             interners,
+            clip_tree_builder,
         );
 
         Some((pic_index, prim_instance))
@@ -3914,6 +3927,7 @@ fn create_prim_instance(
     raster_space: RasterSpace,
     clip_node_id: ClipNodeId,
     interners: &mut Interners,
+    clip_tree_builder: &mut ClipTreeBuilder,
 ) -> PrimitiveInstance {
     let pic_key = PictureKey::new(
         Picture {
@@ -3931,7 +3945,9 @@ fn create_prim_instance(
             data_handle,
             pic_index,
         },
-        clip_node_id,
+        clip_tree_builder.build_for_picture(
+            clip_node_id,
+        ),
     )
 }
 

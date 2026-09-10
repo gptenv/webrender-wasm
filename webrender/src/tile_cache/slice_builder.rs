@@ -273,7 +273,6 @@ impl TileCacheBuilder {
         &mut self,
         prim_instance: PrimitiveInstance,
         prim_rect: LayoutRect,
-        prim_local_clip_rect: LayoutRect,
         spatial_node_index: SpatialNodeIndex,
         prim_flags: PrimitiveFlags,
         spatial_tree: &SceneSpatialTree,
@@ -288,10 +287,10 @@ impl TileCacheBuilder {
                 prim_list.add_prim(
                     prim_instance,
                     prim_rect,
-                    prim_local_clip_rect,
                     spatial_node_index,
                     prim_flags,
                     prim_instances,
+                    clip_tree_builder,
                 );
             }
             SliceKind::Default { ref mut secondary_slices } => {
@@ -338,7 +337,8 @@ impl TileCacheBuilder {
                                 // (a common case is parallax scrolling effects).
                                 let mut create_slice = true;
 
-                                let mut current_node_id = prim_instance.clip_node_id;
+                                let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
+                                let mut current_node_id = leaf.node_id;
 
                                 while current_node_id != ClipNodeId::NONE {
                                     let node = clip_tree_builder.get_node(current_node_id);
@@ -382,10 +382,10 @@ impl TileCacheBuilder {
                     .add_prim(
                         prim_instance,
                         prim_rect,
-                        prim_local_clip_rect,
                         spatial_node_index,
                         prim_flags,
                         prim_instances,
+                        clip_tree_builder,
                     );
             }
         }
@@ -515,15 +515,15 @@ fn create_tile_cache(
 
     for cluster in &prim_list.clusters {
         for prim_instance in &prim_instances[cluster.prim_range()] {
-            let node_id = prim_instance.clip_node_id;
+            let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
 
             // TODO(gw): Need to cache last clip-node id here?
             shared_clip_node_id = match shared_clip_node_id {
                 Some(current) => {
-                    Some(clip_tree_builder.find_lowest_common_ancestor(current, node_id))
+                    Some(clip_tree_builder.find_lowest_common_ancestor(current, leaf.node_id))
                 }
                 None => {
-                    Some(node_id)
+                    Some(leaf.node_id)
                 }
             }
         }
@@ -644,7 +644,7 @@ fn create_tile_cache(
         current_node_id = node.parent;
     }
 
-    let tile_clip_node_id = Some(clip_tree_builder.build_for_tile_cache(
+    let shared_clip_leaf_id = Some(clip_tree_builder.build_for_tile_cache(
         shared_clip_node_id,
         &additional_clips,
     ));
@@ -675,7 +675,7 @@ fn create_tile_cache(
         spatial_node_index: scroll_root,
         background_color,
         shared_clip_node_id,
-        tile_clip_node_id,
+        shared_clip_leaf_id,
         virtual_surface_size: frame_builder_config.compositor_kind.get_virtual_surface_size(),
         image_surface_count: prim_list.image_surface_count,
         yuv_image_surface_count: prim_list.yuv_image_surface_count,
@@ -692,7 +692,7 @@ fn create_tile_cache(
         None,
     ));
 
-    tile_cache_pictures.push(PictureIndex(pic_index as u32));
+    tile_cache_pictures.push(PictureIndex(pic_index));
 }
 
 /// Debug information about a set of picture cache slices, exposed via RenderResults

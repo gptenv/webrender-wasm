@@ -101,11 +101,11 @@ pub fn prepare_picture(
     // memoized: take_context's only None path (invisible picture) is a cheap,
     // side-effect-free query that is stable within a frame, so re-consulting it
     // on a repeat visit is fine and avoids caching an invalid handle.
-    if let Some(handle) = frame_state.picture_scratch_handles[pic_index.0 as usize] {
+    if let Some(handle) = frame_state.picture_scratch_handles[pic_index.0] {
         return Some(handle);
     }
 
-    let pic = &mut store.pictures[pic_index.0 as usize];
+    let pic = &mut store.pictures[pic_index.0];
     let Some((pic_context, mut pic_state, mut prim_list, scratch_handle)) = pic.take_context(
         pic_index,
         surface_index,
@@ -119,7 +119,7 @@ pub fn prepare_picture(
         return None;
     };
 
-    frame_state.picture_scratch_handles[pic_index.0 as usize] = Some(scratch_handle);
+    frame_state.picture_scratch_handles[pic_index.0] = Some(scratch_handle);
     frame_state.num_pictures += 1;
 
     prepare_primitives(
@@ -136,7 +136,7 @@ pub fn prepare_picture(
     );
 
     // Restore the dependencies (borrow check dance)
-    store.pictures[pic_context.pic_index.0 as usize].restore_context(
+    store.pictures[pic_context.pic_index.0].restore_context(
         pic_context.pic_index,
         prim_list,
         pic_context,
@@ -351,7 +351,7 @@ fn prepare_prim_for_render(
             KindScratchHandle::Picture(scratch_handle);
 
         is_passthrough = store
-            .pictures[pic_index.0 as usize]
+            .pictures[pic_index.0]
             .composite_mode
             .is_none();
     }
@@ -1077,7 +1077,7 @@ fn prepare_prim_for_render(
         PrimitiveKind::Picture { pic_index, .. } => {
             tracy_rs::profile_scope!("Picture");
             let pic_scratch_handle = prim_info.kind_scratch.unwrap_picture();
-            let pic = &mut store.pictures[pic_index.0 as usize];
+            let pic = &mut store.pictures[pic_index.0];
 
             let Some(raster_config) = &pic.raster_config else {
                 return;

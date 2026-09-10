@@ -79,7 +79,7 @@ use std::path::PathBuf;
 #[cfg(feature = "replay")]
 use crate::frame_builder::Frame;
 use core::time::Duration;
-use crate::util::{MaxRect, Recycler, VecHelper, drain_filter};
+use crate::util::{Recycler, VecHelper, drain_filter};
 #[cfg(feature = "debugger")]
 use crate::debugger::DebugQueryKind;
 
@@ -173,7 +173,7 @@ impl DataStores {
     ) -> LayoutRect {
         match prim_instance.kind {
             PrimitiveKind::Picture { pic_index, .. } => {
-                let pic = &pictures[pic_index.0 as usize];
+                let pic = &pictures[pic_index.0];
 
                 match pic.raster_config {
                     Some(RasterConfig { surface_index, ref composite_mode, .. }) => {
@@ -203,7 +203,7 @@ impl DataStores {
     ) -> LayoutRect {
         match prim_instance.kind {
             PrimitiveKind::Picture { pic_index, .. } => {
-                let pic = &pictures[pic_index.0 as usize];
+                let pic = &pictures[pic_index.0];
 
                 match pic.raster_config {
                     Some(RasterConfig { surface_index, ref composite_mode, .. }) => {
@@ -246,20 +246,6 @@ impl DataStores {
         match prim_inst.kind {
             PrimitiveKind::Picture { .. } => LayoutRect::zero(),
             _ => self.as_common_data(prim_inst).prim_rect,
-        }
-    }
-
-    /// The primitive's own local clip rect, before device-pixel snapping. Lives
-    /// in the interned template alongside `prim_rect`; picture prims have no
-    /// common data and carry no local clip of their own, so they report
-    /// `max_rect`.
-    pub fn local_clip_rect(
-        &self,
-        prim_inst: &PrimitiveInstance,
-    ) -> LayoutRect {
-        match prim_inst.kind {
-            PrimitiveKind::Picture { .. } => LayoutRect::max_rect(),
-            _ => self.as_common_data(prim_inst).local_clip_rect,
         }
     }
 

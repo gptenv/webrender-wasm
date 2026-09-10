@@ -106,7 +106,7 @@ use crate::pattern::mix_blend::{MixBlendPattern, FixedFunctionMixBlendPattern};
 use crate::pattern::filter::BlendFilterPattern;
 use crate::segment::EdgeMask;
 use api::ImageBufferKind;
-use crate::clip::{ClipChainInstance, ClipNodeId, ClipNodeFlags, ClipNodeRange};
+use crate::clip::{ClipChainInstance, ClipNodeId, ClipNodeFlags, ClipNodeRange, ClipTreeBuilder};
 use crate::spatial_tree::{SpatialTree, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace};
 use crate::composite::{tile_kind, CompositeTileSurface, CompositorKind, NativeTileId};
 use crate::composite::{CompositeTileDescriptor, CompositeTile};
@@ -426,10 +426,10 @@ impl PrimitiveList {
         &mut self,
         prim_instance: PrimitiveInstance,
         prim_rect: LayoutRect,
-        prim_local_clip_rect: LayoutRect,
         spatial_node_index: SpatialNodeIndex,
         prim_flags: PrimitiveFlags,
         prim_instances: &mut Vec<PrimitiveInstance>,
+        clip_tree_builder: &ClipTreeBuilder,
     ) {
         let mut flags = ClusterFlags::empty();
 
@@ -470,13 +470,12 @@ impl PrimitiveList {
             flags.insert(ClusterFlags::IS_BACKFACE_VISIBLE);
         }
 
+        let clip_leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
         // Scene-build feeds the cluster's `unsnapped_bounding_rect` from this
-        // culling rect (local clip rect ∩ prim_rect). Both inputs are pre-snap;
+        // culling rect (clip-leaf rect ∩ prim_rect). Both inputs are pre-snap;
         // the cluster bounding rect is re-snapped each frame in
-        // `PictureInstance::propagate_bounding_rect`. Passed in rather than read
-        // back from the interned template, which does not exist yet at scene
-        // build time.
-        let culling_rect = prim_local_clip_rect
+        // `PictureInstance::propagate_bounding_rect`.
+        let culling_rect = clip_leaf.unsnapped_local_clip_rect
             .intersection(&prim_rect)
             .unwrap_or_else(LayoutRect::zero);
 
@@ -626,7 +625,7 @@ impl PictureInstance {
         pt.add_item(format!("flags: {:?}", self.flags));
 
         for child_pic_index in &self.prim_list.child_pictures {
-            pictures[child_pic_index.0 as usize].print(pictures, *child_pic_index, pt);
+            pictures[child_pic_index.0].print(pictures, *child_pic_index, pt);
         }
 
         pt.end_level();
