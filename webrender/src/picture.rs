@@ -625,7 +625,7 @@ impl PictureInstance {
         pt.add_item(format!("flags: {:?}", self.flags));
 
         for child_pic_index in &self.prim_list.child_pictures {
-            pictures[child_pic_index.0].print(pictures, *child_pic_index, pt);
+            pictures[child_pic_index.0 as usize].print(pictures, *child_pic_index, pt);
         }
 
         pt.end_level();

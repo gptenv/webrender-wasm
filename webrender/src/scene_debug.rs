@@ -204,7 +204,7 @@ impl<'a> TreeWalker<'a> {
     }
 
     fn picture_children(&mut self, pic_index: PictureIndex) -> Vec<SceneDebugNode> {
-        let pic = &self.scene.prim_store.pictures[pic_index.0];
+        let pic = &self.scene.prim_store.pictures[pic_index.0 as usize];
         let mut children = Vec::new();
         for cluster in &pic.prim_list.clusters {
             for prim_index in cluster.prim_range() {
@@ -215,7 +215,7 @@ impl<'a> TreeWalker<'a> {
     }
 
     fn picture_detail(&self, pic_index: PictureIndex) -> String {
-        let pic = &self.scene.prim_store.pictures[pic_index.0];
+        let pic = &self.scene.prim_store.pictures[pic_index.0 as usize];
         let mut detail = match pic.composite_mode {
             Some(ref mode) => format!("{:?}", mode),
             None => "pass-through".to_string(),
@@ -288,7 +288,7 @@ impl<'a> TreeWalker<'a> {
 
         SceneDebugNode {
             prim_index: Some(prim_index as u32),
-            picture_index: picture_index.map(|index| index.0 as u32),
+            picture_index: picture_index.map(|index| index.0),
             kind: kind.to_string(),
             detail,
             color,
@@ -301,10 +301,10 @@ impl<'a> TreeWalker<'a> {
     }
 
     fn root_node(&mut self, pic_index: PictureIndex, kind: &str) -> SceneDebugNode {
-        let pic = &self.scene.prim_store.pictures[pic_index.0];
+        let pic = &self.scene.prim_store.pictures[pic_index.0 as usize];
         SceneDebugNode {
             prim_index: None,
-            picture_index: Some(pic_index.0 as u32),
+            picture_index: Some(pic_index.0),
             kind: kind.to_string(),
             detail: self.picture_detail(pic_index),
             color: None,

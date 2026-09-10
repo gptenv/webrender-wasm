@@ -413,7 +413,7 @@ impl FrameBuilder {
                 // the changes, we have to make sure that the image's
                 // generation counter is incremented early in the frame,
                 // before the main visibility pass visits the image items.
-                let pic = &scene.prim_store.pictures[pic_index.0];
+                let pic = &scene.prim_store.pictures[pic_index.0 as usize];
                 let snapshot = pic.snapshot
                     .unwrap();
                 let key = snapshot.key.as_image();
@@ -433,7 +433,7 @@ impl FrameBuilder {
                     &mut visibility_state,
                     &mut None,
                 );
-                if scene.prim_store.pictures[pic_index.0].clip_root.is_some() {
+                if scene.prim_store.pictures[pic_index.0 as usize].clip_root.is_some() {
                     visibility_state.pop_clip_root();
                 }
             }
@@ -442,7 +442,7 @@ impl FrameBuilder {
                 if !render_picture_cache_slices {
                     break;
                 }
-                let pic = &mut scene.prim_store.pictures[pic_index.0];
+                let pic = &mut scene.prim_store.pictures[pic_index.0 as usize];
 
                 match pic.raster_config {
                     Some(RasterConfig { surface_index, composite_mode: PictureCompositeMode::TileCache { slice_id }, .. }) => {
@@ -1016,7 +1016,7 @@ impl FrameBuilder {
         let mut current_opaque_clip = None;
 
         for pic_index in tile_cache_pictures.iter().rev() {
-            let pic = &mut pictures[pic_index.0];
+            let pic = &mut pictures[pic_index.0 as usize];
 
             match pic.raster_config {
                 Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { slice_id }, .. }) => {
@@ -1089,7 +1089,7 @@ impl FrameBuilder {
         composite_state: &mut CompositeState,
     ) {
         for pic_index in &scene.tile_cache_pictures {
-            let pic = &ctx.prim_store.pictures[pic_index.0];
+            let pic = &ctx.prim_store.pictures[pic_index.0 as usize];
 
             match pic.raster_config {
                 Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { slice_id }, .. }) => {

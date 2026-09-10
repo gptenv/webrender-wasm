@@ -2239,7 +2239,7 @@ impl TileCacheInstance {
 
             for (pic_index, surface_index) in surface_stack.iter().rev() {
                 let surface = &surfaces[surface_index.0];
-                let pic = &pictures[pic_index.0];
+                let pic = &pictures[pic_index.0 as usize];
 
                 let map_local_to_parent = SpaceMapper::new_with_target(
                     surface.surface_spatial_node_index,
@@ -2340,7 +2340,7 @@ impl TileCacheInstance {
         match prim_instance.kind {
             PrimitiveKind::Picture { pic_index,.. } => {
                 // Pictures can depend on animated opacity bindings.
-                let pic = &pictures[pic_index.0];
+                let pic = &pictures[pic_index.0 as usize];
                 if let Some(PictureCompositeMode::Filter(Filter::Opacity(binding, _))) = pic.composite_mode {
                     prim_info.opacity_bindings.push(binding.into());
                 }
@@ -2668,7 +2668,7 @@ impl TileCacheInstance {
 
                     let mut surface_info = Vec::new();
                     for (pic_index, surface_index) in surface_stack.iter().rev() {
-                        let pic = &pictures[pic_index.0];
+                        let pic = &pictures[pic_index.0 as usize];
                         surface_info.push((pic.composite_mode.as_ref().unwrap().clone(), *surface_index));
                     }
 

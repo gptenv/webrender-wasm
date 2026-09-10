@@ -300,7 +300,7 @@ impl PictureChainBuilder {
                 self.raster_space,
                 flags,
                 None,
-            ))
+            )) as u32
         );
 
         let instance = create_prim_instance(
@@ -342,7 +342,7 @@ impl PictureChainBuilder {
         match self.current {
             PictureSource::WrappedPicture { instance } => {
                 let pic_index = instance.kind.as_pic();
-                let picture = &mut prim_store.pictures[pic_index.0];
+                let picture = &mut prim_store.pictures[pic_index.0 as usize];
                 picture.flags |= flags;
                 picture.snapshot = snapshot;
 
@@ -372,7 +372,7 @@ impl PictureChainBuilder {
                         self.raster_space,
                         flags,
                         snapshot,
-                    ))
+                    )) as u32
                 );
 
                 create_prim_instance(
@@ -666,7 +666,7 @@ impl<'a> SceneBuilder<'a> {
         // Extract the prim_list (borrow check) and select the spatial node to
         // assign to unknown clusters
         let (mut prim_list, spatial_node_index) = {
-            let pic = &mut pictures[pic_index.0];
+            let pic = &mut pictures[pic_index.0 as usize];
             assert_ne!(pic.spatial_node_index, SpatialNodeIndex::UNKNOWN);
 
             // If we're a surface, use that spatial node, otherwise the parent
@@ -702,7 +702,7 @@ impl<'a> SceneBuilder<'a> {
         // *must* be extracted from the snapshot, so we rely on this optimization
         // taking out parent clips and it overrides other conditions.
         // In addition we need to ensure that only parent clips are extracted.
-        let is_snapshot = pictures[pic_index.0].snapshot.is_some();
+        let is_snapshot = pictures[pic_index.0 as usize].snapshot.is_some();
 
         if is_snapshot {
             // In the general case, if all of the children of a picture share the
@@ -765,7 +765,7 @@ impl<'a> SceneBuilder<'a> {
         // part of compositing the picture.  However, this is not true if the
         // picture includes a blur filter as the blur result depends on the
         // offscreen pixels which may or may not be cropped away.
-        let has_blur = match &pictures[pic_index.0].composite_mode {
+        let has_blur = match &pictures[pic_index.0 as usize].composite_mode {
             Some(PictureCompositeMode::Filter(Filter::Blur { .. })) => true,
             Some(PictureCompositeMode::Filter(Filter::DropShadows { .. })) => true,
             Some(PictureCompositeMode::SVGFEGraph( .. )) => true,
@@ -797,14 +797,14 @@ impl<'a> SceneBuilder<'a> {
         });
 
         if should_set_clip_root {
-            pictures[pic_index.0].clip_root = shared_clip_node_id;
+            pictures[pic_index.0 as usize].clip_root = shared_clip_node_id;
         }
 
         // Update the spatial node of any child pictures
         for cluster in &prim_list.clusters {
             for prim_instance_index in cluster.prim_range() {
                 if let PrimitiveKind::Picture { pic_index: child_pic_index, .. } = prim_instances[prim_instance_index].kind {
-                    let child_pic = &mut pictures[child_pic_index.0];
+                    let child_pic = &mut pictures[child_pic_index.0 as usize];
 
                     if child_pic.spatial_node_index == SpatialNodeIndex::UNKNOWN {
                         child_pic.spatial_node_index = spatial_node_index;
@@ -825,7 +825,7 @@ impl<'a> SceneBuilder<'a> {
         }
 
         // Restore the prim_list
-        pictures[pic_index.0].prim_list = prim_list;
+        pictures[pic_index.0 as usize].prim_list = prim_list;
     }
 
     fn build_spatial_tree_for_display_list(
@@ -2247,7 +2247,7 @@ impl<'a> SceneBuilder<'a> {
                         stacking_context.raster_space,
                         PictureFlags::empty(),
                         None,
-                    ))
+                    )) as u32
                 );
 
                 let instance = create_prim_instance(
@@ -2292,7 +2292,7 @@ impl<'a> SceneBuilder<'a> {
                             stacking_context.raster_space,
                             PictureFlags::empty(),
                             None,
-                        ))
+                        )) as u32
                     );
 
                     let instance = create_prim_instance(
@@ -2378,7 +2378,7 @@ impl<'a> SceneBuilder<'a> {
                 // that make up this context and disable the off-screen surface and
                 // 3d render context.
                 for child_pic_index in &prim_list.child_pictures {
-                    let child_pic = &mut self.prim_store.pictures[child_pic_index.0];
+                    let child_pic = &mut self.prim_store.pictures[child_pic_index.0 as usize];
                     let needs_surface = child_pic.snapshot.is_some();
                     if !needs_surface {
                         child_pic.composite_mode = None;
@@ -2401,7 +2401,7 @@ impl<'a> SceneBuilder<'a> {
                     stacking_context.raster_space,
                     PictureFlags::empty(),
                     None,
-                ))
+                )) as u32
             );
 
             let instance = create_prim_instance(
@@ -3910,7 +3910,7 @@ impl FlattenedStackingContext {
                 self.raster_space,
                 PictureFlags::empty(),
                 None
-            ))
+            )) as u32
         );
 
         let prim_instance = create_prim_instance(
