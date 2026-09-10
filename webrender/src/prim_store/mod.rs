@@ -5,7 +5,7 @@
 use api::ColorF;
 use api::{ImageRendering, LineOrientation, PrimitiveFlags};
 use api::units::*;
-use crate::clip::ClipLeafId;
+use crate::clip::{ClipLeafId, ClipNodeId};
 use crate::render_backend::DataStores;
 use crate::space::SnapRounding;
 use crate::quad::QuadTileClassifier;
@@ -304,7 +304,11 @@ pub struct PrimitiveInstance {
     /// can be found.
     pub kind: PrimitiveKind,
 
-    /// All information and state related to clip(s) for this primitive
+    /// Where this primitive's clip chain starts in the clip tree. Walking from
+    /// here up to the current clip root gives the clips that apply to it.
+    pub clip_node_id: ClipNodeId,
+
+    /// Leaf holding this primitive's own local clip rect.
     pub clip_leaf_id: ClipLeafId,
 }
 
@@ -335,10 +339,12 @@ pub struct SnapPolicy {
 impl PrimitiveInstance {
     pub fn new(
         kind: PrimitiveKind,
+        clip_node_id: ClipNodeId,
         clip_leaf_id: ClipLeafId,
     ) -> Self {
         PrimitiveInstance {
             kind,
+            clip_node_id,
             clip_leaf_id,
         }
     }

@@ -716,22 +716,22 @@ impl<'a> SceneBuilder<'a> {
             // snapshot even when all children of the snapshotted picture share
             // a clip.
             if let Some(idx) = prim_index {
-                let clip_node = clip_tree_builder.get_leaf(prim_instances[idx].clip_leaf_id).node_id;
+                let clip_node = prim_instances[idx].clip_node_id;
                 shared_clip_node_id = clip_tree_builder.get_parent(clip_node);
             }
         } else {
             for cluster in &prim_list.clusters {
                 for prim_instance in &prim_instances[cluster.prim_range()] {
-                    let leaf = clip_tree_builder.get_leaf(prim_instance.clip_leaf_id);
+                    let node_id = prim_instance.clip_node_id;
 
                     shared_clip_node_id = match shared_clip_node_id {
                         Some(current) => {
                             Some(clip_tree_builder.find_lowest_common_ancestor(
                                 current,
-                                leaf.node_id,
+                                node_id,
                             ))
                         }
-                        None => Some(leaf.node_id)
+                        None => Some(node_id)
                     };
                 }
             }
@@ -751,7 +751,7 @@ impl<'a> SceneBuilder<'a> {
         let lca_clip_rect = lca_tree_node
             .map(|tree_node| tree_node.unsnapped_clip_rect);
         let pic_node_id = prim_index
-            .map(|prim_index| clip_tree_builder.get_leaf(prim_instances[prim_index].clip_leaf_id).node_id)
+            .map(|prim_index| prim_instances[prim_index].clip_node_id)
             .and_then(|node_id| (node_id != ClipNodeId::NONE).then_some(node_id));
         let pic_tree_node = pic_node_id
             .map(|node_id| clip_tree_builder.get_node(node_id));
@@ -1750,6 +1750,7 @@ impl<'a> SceneBuilder<'a> {
     fn create_primitive<P>(
         &mut self,
         info: &LayoutPrimitiveInfo,
+        clip_node_id: ClipNodeId,
         clip_leaf_id: ClipLeafId,
         prim: P,
     ) -> PrimitiveInstance
@@ -1772,6 +1773,7 @@ impl<'a> SceneBuilder<'a> {
 
         PrimitiveInstance::new(
             instance_kind,
+            clip_node_id,
             clip_leaf_id,
         )
     }
@@ -1856,6 +1858,7 @@ impl<'a> SceneBuilder<'a> {
             self.add_prim_to_draw_list(
                 info,
                 spatial_node_index,
+                clip_node_id,
                 clip_leaf_id,
                 prim,
             );
@@ -1867,6 +1870,7 @@ impl<'a> SceneBuilder<'a> {
         &mut self,
         info: &LayoutPrimitiveInfo,
         spatial_node_index: SpatialNodeIndex,
+        clip_node_id: ClipNodeId,
         clip_leaf_id: ClipLeafId,
         prim: P,
     )
@@ -1876,6 +1880,7 @@ impl<'a> SceneBuilder<'a> {
     {
         let prim_instance = self.create_primitive(
             info,
+            clip_node_id,
             clip_leaf_id,
             prim,
         );
@@ -3059,6 +3064,7 @@ impl<'a> SceneBuilder<'a> {
         // picture that reads from the backdrop root
         let backdrop_capture_instance = self.create_primitive(
             info,
+            clip_node_id,
             clip_leaf_id,
             BackdropCapture {
             },
@@ -3160,6 +3166,7 @@ impl<'a> SceneBuilder<'a> {
             // Add the prim that renders the result of the backdrop filter chain
             let mut backdrop_render_instance = self.create_primitive(
                 info,
+                clip_node_id,
                 clip_leaf_id,
                 BackdropRender {
                 },
@@ -3943,9 +3950,8 @@ fn create_prim_instance(
             data_handle,
             pic_index,
         },
-        clip_tree_builder.build_for_picture(
-            clip_node_id,
-        ),
+        clip_node_id,
+        clip_tree_builder.build_for_picture(),
     )
 }
 
