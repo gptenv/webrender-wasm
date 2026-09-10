@@ -73,7 +73,7 @@ pub struct FrameVisibilityState<'a> {
     pub resource_cache: &'a mut ResourceCache,
     pub frame_gpu_data: &'a mut GpuBufferBuilder,
     pub data_stores: &'a DataStores,
-    pub clip_tree: &'a mut ClipTree,
+    pub clip_tree: &'a ClipTree,
     pub composite_state: &'a mut CompositeState,
     pub rg_builder: &'a mut RenderTaskGraphBuilder,
     pub prim_instances: &'a mut [PrimitiveInstance],
@@ -81,6 +81,14 @@ pub struct FrameVisibilityState<'a> {
     /// A stack of currently active off-screen surfaces during the
     /// visibility frame traversal.
     pub surface_stack: Vec<(PictureIndex, SurfaceIndex)>,
+    /// A stack of clip roots for the visibility frame traversal. A clip root is
+    /// the node in the clip tree at and above which clips are already handled
+    /// by the enclosing surface, so primitives inside it can ignore them.
+    /// Pushed and popped as surfaces are entered and left, in step with
+    /// `surface_stack`. The base entry is `ClipNodeId::NONE`, meaning nothing
+    /// is ignored. Frame state rather than scene state, so the clip tree itself
+    /// stays immutable for the whole of frame building.
+    pub clip_root_stack: Vec<ClipNodeId>,
     pub profile: &'a mut TransactionProfile,
     pub scratch: &'a mut ScratchBuffer,
     pub visited_pictures: &'a mut[bool],
@@ -98,6 +106,31 @@ impl<'a> FrameVisibilityState<'a> {
     pub fn pop_surface(&mut self) {
         self.surface_stack.pop().unwrap();
     }
+
+    /// The clip-tree node at and above which clips can be ignored when building
+    /// the clip-chain instance for a primitive.
+    pub fn current_clip_root(&self) -> ClipNodeId {
+        *self.clip_root_stack.last().unwrap()
+    }
+
+    /// Push a clip root, e.g. when a surface is encountered, so that clips from
+    /// this node upwards are not applied to primitives within the root.
+    pub fn push_clip_root(&mut self, clip_node_id: ClipNodeId) {
+        self.clip_root_stack.push(clip_node_id);
+    }
+
+    /// Pop a clip root, when exiting a surface.
+    pub fn pop_clip_root(&mut self) {
+        self.clip_root_stack.pop().unwrap();
+    }
+}
+
+/// Seed a (possibly recycled) allocation with the base clip root, ready to be
+/// used as a `FrameVisibilityState::clip_root_stack`.
+pub fn new_clip_root_stack(mut stack: Vec<ClipNodeId>) -> Vec<ClipNodeId> {
+    stack.clear();
+    stack.push(ClipNodeId::NONE);
+    stack
 }
 
 bitflags! {
@@ -426,7 +459,7 @@ pub fn update_prim_visibility(
                         }
                     );
 
-                    frame_state.clip_tree.push_clip_root_node(clip_root);
+                    frame_state.push_clip_root(clip_root);
                 }
 
                 update_prim_visibility(
@@ -446,9 +479,12 @@ pub fn update_prim_visibility(
 
                     continue;
                 } else {
-                    frame_state.clip_tree.pop_clip_root();
+                    frame_state.pop_clip_root();
                 }
             }
+
+            // Read before the mutable borrow of `clip_store` below.
+            let clip_root = frame_state.current_clip_root();
 
             let prim_instance = &mut frame_state.prim_instances[prim_instance_index];
 
@@ -466,6 +502,7 @@ pub fn update_prim_visibility(
                 &mut clip_snapper,
                 policy.clip,
                 prim_instance.clip_leaf_id,
+                clip_root,
                 snapped_leaf_clip_rect,
                 &frame_context.spatial_tree,
                 &frame_state.data_stores.clip,

@@ -244,7 +244,6 @@ impl std::fmt::Debug for ClipLeafId {
 pub struct ClipTree {
     nodes: Vec<ClipTreeNode>,
     leaves: Vec<ClipTreeLeaf>,
-    clip_root_stack: Vec<ClipNodeId>,
 }
 
 impl ClipTree {
@@ -261,9 +260,6 @@ impl ClipTree {
                 }
             ],
             leaves: Vec::new(),
-            clip_root_stack: vec![
-                ClipNodeId::NONE,
-            ],
         }
     }
 
@@ -279,9 +275,6 @@ impl ClipTree {
         });
 
         self.leaves.clear();
-
-        self.clip_root_stack.clear();
-        self.clip_root_stack.push(ClipNodeId::NONE);
     }
 
     /// Add a set of clips to the provided tree node id, reusing existing
@@ -336,23 +329,6 @@ impl ClipTree {
             clips,
             &mut self.nodes,
         )
-    }
-
-    /// Get the current clip root (the node in the clip-tree where clips can be
-    /// ignored when building the clip-chain instance for a primitive)
-    pub fn current_clip_root(&self) -> ClipNodeId {
-        self.clip_root_stack.last().cloned().unwrap()
-    }
-
-    /// Push a clip root (e.g. when a surface is encountered) that prevents clips
-    /// from this node and above being applied to primitives within the root.
-    pub fn push_clip_root_node(&mut self, clip_node_id: ClipNodeId) {
-        self.clip_root_stack.push(clip_node_id);
-    }
-
-    /// Pop a clip root, when exiting a surface.
-    pub fn pop_clip_root(&mut self) {
-        self.clip_root_stack.pop().unwrap();
     }
 
     /// Retrieve a clip tree node by id
@@ -951,7 +927,6 @@ impl ClipTreeBuilder {
         std::mem::replace(&mut self.tree, ClipTree {
             nodes: Vec::new(),
             leaves: Vec::new(),
-            clip_root_stack: Vec::new(),
         })
     }
 
@@ -1555,6 +1530,10 @@ impl ClipStore {
         snapper: &mut SpaceSnapper,
         clip_snap: ClipSnap,
         clip_leaf_id: ClipLeafId,
+        // The node in the clip tree at and above which clips are already
+        // handled by the enclosing surface, so this primitive can ignore them.
+        // Frame state owned by the visibility traversal, not the scene's tree.
+        clip_root: ClipNodeId,
         // The leaf's own clip rect, already snapped by the caller against the
         // owning prim's spatial node (`ClipTree::snap_leaf_clip_rect`). Passed
         // in rather than read from the leaf so the tree stays immutable during
@@ -1569,7 +1548,6 @@ impl ClipStore {
         self.active_local_clip_rect = None;
         self.active_pic_coverage_rect = PictureRect::max_rect();
 
-        let clip_root = clip_tree.current_clip_root();
         let clip_leaf = clip_tree.get_leaf(clip_leaf_id);
 
         // How each clip in the chain rounds to the device grid is the prim's
