@@ -1076,11 +1076,11 @@ pub enum ClipSpaceConversion {
     /// The clip and the clipped primitive are in different coordinate system.
     ///
     /// This Variant represents the transform from the clip's local space to
-    /// the visibility space.
-    Transform(LayoutToVisTransform),
-    /// The clip's space cannot be related to the visibility space, so whether
-    /// the clip affects the primitive can't be determined and a mask is assumed
-    /// to be needed.
+    /// the surface's raster space.
+    Transform(LayoutToRasterTransform),
+    /// The clip's space cannot be related to the surface's raster space, so
+    /// whether the clip affects the primitive can't be determined and a mask is
+    /// assumed to be needed.
     ///
     /// Reached when the clip sits outside the 3D context that established the
     /// surface's raster root: relating the two would need a transform away from
@@ -1094,7 +1094,7 @@ impl ClipSpaceConversion {
     pub fn new(
         prim_spatial_node_index: SpatialNodeIndex,
         clip_spatial_node_index: SpatialNodeIndex,
-        visibility_spatial_node_index: SpatialNodeIndex,
+        raster_spatial_node_index: SpatialNodeIndex,
         spatial_tree: &SpatialTree,
     ) -> Self {
         //Note: this code is different from `get_relative_transform` in a way that we only try
@@ -1111,12 +1111,12 @@ impl ClipSpaceConversion {
             ClipSpaceConversion::ScaleOffset(scale_offset)
         } else if spatial_tree.can_get_relative_transform(
             clip_spatial_node_index,
-            visibility_spatial_node_index,
+            raster_spatial_node_index,
         ) {
             ClipSpaceConversion::Transform(
                 spatial_tree.get_relative_transform(
                     clip_spatial_node_index,
-                    visibility_spatial_node_index,
+                    raster_spatial_node_index,
                 ).into_transform().cast_unit()
             )
         } else {
@@ -1282,14 +1282,14 @@ pub struct ClipStore {
 
     /// Counts of what the visibility-space clip path did this frame, flushed to
     /// the profiler by `end_frame`.
-    vis_stats: VisClipStats,
+    raster_clip_stats: RasterClipStats,
 }
 
 /// Instrumentation for the clip decisions that visibility space affects. See the
 /// `VIS_CLIP_*` profiler counters.
 #[derive(Clone, Default, MallocSizeOf)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
-pub struct VisClipStats {
+pub struct RasterClipStats {
     pub projections: usize,
     pub projection_fails: usize,
     pub rejects: usize,
@@ -1351,7 +1351,7 @@ impl ClipStore {
             active_clip_node_info: Vec::new(),
             active_local_clip_rect: None,
             active_pic_coverage_rect: PictureRect::max_rect(),
-            vis_stats: VisClipStats::default(),
+            raster_clip_stats: RasterClipStats::default(),
         }
     }
 
@@ -1376,7 +1376,7 @@ impl ClipStore {
         &mut self,
         prim_spatial_node_index: SpatialNodeIndex,
         pic_spatial_node_index: SpatialNodeIndex,
-        visibility_spatial_node_index: SpatialNodeIndex,
+        raster_spatial_node_index: SpatialNodeIndex,
         snapper: &mut SpaceSnapper,
         clip_snap: ClipSnap,
         // Where this primitive's clip chain starts in the tree; the walk below
@@ -1431,7 +1431,7 @@ impl ClipStore {
                 clip_rect,
                 prim_spatial_node_index,
                 pic_spatial_node_index,
-                visibility_spatial_node_index,
+                raster_spatial_node_index,
                 &mut local_clip_rect,
                 &mut self.active_clip_node_info,
                 &mut self.active_pic_coverage_rect,
@@ -1513,10 +1513,10 @@ impl ClipStore {
         &mut self,
         local_prim_rect: LayoutRect,
         prim_to_pic_mapper: &SpaceMapper<LayoutPixel, PicturePixel>,
-        pic_to_vis_mapper: &SpaceMapper<PicturePixel, VisPixel>,
+        pic_to_raster_mapper: &SpaceMapper<PicturePixel, RasterPixel>,
         gpu_buffer: &mut GpuBufferBuilderF,
         resource_cache: &mut ResourceCache,
-        culling_rect: &VisRect,
+        culling_rect: &RasterRect,
         clip_data_store: &ClipDataStore,
         rg_builder: &mut RenderTaskGraphBuilder,
         request_resources: bool,
@@ -1530,7 +1530,7 @@ impl ClipStore {
 
         let local_bounding_rect = local_prim_rect.intersection(&local_clip_rect)?;
         let mut pic_coverage_rect = prim_to_pic_mapper.map(&local_bounding_rect)?;
-        let vis_clip_rect = pic_to_vis_mapper.map(&pic_coverage_rect)?;
+        let raster_clip_rect = pic_to_raster_mapper.map(&pic_coverage_rect)?;
 
         // Now, we've collected all the clip nodes that *potentially* affect this
         // primitive region, and reduced the size of the prim region as much as possible.
@@ -1558,18 +1558,18 @@ impl ClipStore {
                     // Can't tell whether the clip affects the primitive, so
                     // assume it does. A mask is always a safe answer.
                     has_non_local_clips = true;
-                    self.vis_stats.indeterminate += 1;
+                    self.raster_clip_stats.indeterminate += 1;
                     ClipResult::Partial
                 }
                 ClipSpaceConversion::Transform(ref transform) => {
                     has_non_local_clips = true;
-                    self.vis_stats.projections += 1;
+                    self.raster_clip_stats.projections += 1;
                     node.item.kind.get_clip_result_complex(
                         transform,
-                        &vis_clip_rect,
+                        &raster_clip_rect,
                         culling_rect,
                         node_info.clip_rect,
-                        &mut self.vis_stats.projection_fails,
+                        &mut self.raster_clip_stats.projection_fails,
                     )
                 }
             };
@@ -1581,7 +1581,7 @@ impl ClipStore {
                 ClipResult::Reject => {
                     // Completely clips the supplied prim rect
                     if matches!(node_info.conversion, ClipSpaceConversion::Transform(..)) {
-                        self.vis_stats.rejects += 1;
+                        self.raster_clip_stats.rejects += 1;
                     }
                     return None;
                 }
@@ -1656,11 +1656,11 @@ impl ClipStore {
         mem::swap(&mut self.mask_tiles, &mut scratch.mask_tiles);
         self.clip_node_instances.clear();
         self.mask_tiles.clear();
-        self.vis_stats = VisClipStats::default();
+        self.raster_clip_stats = RasterClipStats::default();
     }
 
-    pub fn vis_stats(&self) -> &VisClipStats {
-        &self.vis_stats
+    pub fn raster_clip_stats(&self) -> &RasterClipStats {
+        &self.raster_clip_stats
     }
 
     pub fn end_frame(&mut self, scratch: &mut ClipStoreScratchBuffer) {
@@ -1856,9 +1856,9 @@ impl ClipItemKind {
 
     fn get_clip_result_complex(
         &self,
-        transform: &LayoutToVisTransform,
-        prim_rect: &VisRect,
-        culling_rect: &VisRect,
+        transform: &LayoutToRasterTransform,
+        prim_rect: &RasterRect,
+        culling_rect: &RasterRect,
         clip_rect: LayoutRect,
         projection_fails: &mut usize,
     ) -> ClipResult {
@@ -2144,8 +2144,8 @@ pub fn polygon_contains_point(
 
 pub fn projected_rect_contains(
     source_rect: &LayoutRect,
-    transform: &LayoutToVisTransform,
-    target_rect: &VisRect,
+    transform: &LayoutToRasterTransform,
+    target_rect: &RasterRect,
 ) -> Option<()> {
     let points = [
         transform.transform_point2d(source_rect.top_left())?,
@@ -2187,7 +2187,7 @@ fn add_clip_node_to_current_chain(
     clip_rect: LayoutRect,
     prim_spatial_node_index: SpatialNodeIndex,
     pic_spatial_node_index: SpatialNodeIndex,
-    visibility_spatial_node_index: SpatialNodeIndex,
+    raster_spatial_node_index: SpatialNodeIndex,
     local_clip_rect: &mut LayoutRect,
     clip_node_info: &mut Vec<ClipNodeInfo>,
     pic_coverage_rect: &mut PictureRect,
@@ -2201,7 +2201,7 @@ fn add_clip_node_to_current_chain(
     let conversion = ClipSpaceConversion::new(
         prim_spatial_node_index,
         clip_spatial_node_index,
-        visibility_spatial_node_index,
+        raster_spatial_node_index,
         spatial_tree,
     );
 

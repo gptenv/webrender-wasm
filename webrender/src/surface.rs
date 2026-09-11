@@ -123,31 +123,7 @@ fn resolve_dest_to_src_raster(
     }
 }
 
-/// The spatial node that visibility, clipping, dirty-region and invalidation
-/// calculations for a surface are performed relative to.
-///
-/// Everything downstream treats `VisPixel` as the local space of the returned
-/// node, so a surface's culling rect and every primitive or clip rect projected
-/// for a culling decision must be built against the same node.
-///
-/// This is the surface's raster node, so content is culled against the region of
-/// the render target it is drawn into rather than a region of the screen. A
-/// primitive's relationship to that node is usually a plain 2D scale and offset
-/// even when its relationship to the screen is not: a raster root established for
-/// a preserve-3d or perspective subtree sits inside the transform that makes the
-/// screen-relative mapping hard.
-///
-/// The cost is that visibility space need not be axis-aligned with the screen any
-/// more, so the culling rect may have no exact pre-image; see `culling_rect`.
-pub fn visibility_node(
-    raster_spatial_node_index: SpatialNodeIndex,
-) -> SpatialNodeIndex {
-    debug_assert_ne!(raster_spatial_node_index, SpatialNodeIndex::INVALID);
-
-    raster_spatial_node_index
-}
-
-/// The mapping between a vis node's space and the screen framebuffer's device
+/// The mapping between a raster node's space and the screen framebuffer's device
 /// space. That is the root reference frame's space - the root carries no device
 /// scale of its own - which is what lets the screen rect be the target of this
 /// mapping.
@@ -160,14 +136,14 @@ pub fn visibility_node(
 /// its corners do not bound it; culling against that would drop content that is
 /// on screen. Callers must check `as_2d_scale_offset` before trusting the
 /// result for culling.
-fn vis_to_root_mapper(
-    visibility_spatial_node_index: SpatialNodeIndex,
+fn raster_to_root_mapper(
+    raster_spatial_node_index: SpatialNodeIndex,
     bounds: DeviceRect,
     spatial_tree: &SpatialTree,
-) -> SpaceMapper<VisPixel, DevicePixel> {
+) -> SpaceMapper<RasterPixel, DevicePixel> {
     SpaceMapper::new_with_target(
         spatial_tree.root_reference_frame_index(),
-        visibility_spatial_node_index,
+        raster_spatial_node_index,
         bounds,
         spatial_tree,
     )
@@ -230,7 +206,7 @@ pub struct SurfaceInfo {
     /// to reduce the size of render target allocation.
     pub clipping_rect: PictureRect,
     /// The rectangle to use for culling and clipping, in the local space of
-    /// `visibility_spatial_node_index`. A primitive outside it cannot affect
+    /// `raster_spatial_node_index`. A primitive outside it cannot affect
     /// anything on screen.
     ///
     /// For a root surface this is the visible region of the screen expressed in
@@ -244,7 +220,7 @@ pub struct SurfaceInfo {
     /// Never empty as a way of saying "nothing is visible": an empty culling
     /// rect culls the whole surface, so any projection that cannot be computed
     /// falls back to `max_rect` (cull nothing) instead.
-    pub culling_rect: VisRect,
+    pub culling_rect: RasterRect,
     /// Whether `culling_rect` is the `max_rect` fallback rather than a real
     /// projection of the screen. Instrumentation only: a `max_rect` culling rect
     /// is also legitimate for a surface handed an unbounded screen rect.
@@ -256,9 +232,6 @@ pub struct SurfaceInfo {
     pub surface_spatial_node_index: SpatialNodeIndex,
     /// The rasterization root for this surface.
     pub raster_spatial_node_index: SpatialNodeIndex,
-    /// The spatial node for culling and clipping (anything using VisPixel).
-    /// Chosen by `visibility_node`.
-    pub visibility_spatial_node_index: SpatialNodeIndex,
     /// The device pixel ratio specific to this surface.
     pub device_pixel_scale: DevicePixelScale,
     /// The scale factors of the surface to world transform. Child surfaces
@@ -326,21 +299,19 @@ impl SurfaceInfo {
             pic_bounds,
         );
 
-        let visibility_spatial_node_index = visibility_node(raster_spatial_node_index);
-
-        // The culling rect is the screen, expressed in vis space.
-        let map_vis_to_root = vis_to_root_mapper(
-            visibility_spatial_node_index,
+        // The culling rect is the screen, expressed in raster space.
+        let map_raster_to_root = raster_to_root_mapper(
+            raster_spatial_node_index,
             global_culling_rect,
             spatial_tree,
         );
 
-        // A vis node in the root coordinate system always gives a scale+offset,
-        // so the guard only bites for a raster root established inside a 3D
-        // context - where the answer is to cull nothing.
-        let projected = map_vis_to_root
+        // A raster node in the root coordinate system always gives a
+        // scale+offset, so the guard only bites for a raster root established
+        // inside a 3D context - where the answer is to cull nothing.
+        let projected = map_raster_to_root
             .as_2d_scale_offset()
-            .and_then(|_| map_vis_to_root.unmap(&global_culling_rect));
+            .and_then(|_| map_raster_to_root.unmap(&global_culling_rect));
 
         let mut culling_rect_projection_failed = false;
         let culling_rect = match projected {
@@ -350,12 +321,12 @@ impl SurfaceInfo {
                 // Cull nothing rather than everything; see `culling_rect`.
                 debug_assert_ne!(
                     spatial_tree
-                        .get_spatial_node(visibility_spatial_node_index)
+                        .get_spatial_node(raster_spatial_node_index)
                         .coordinate_system_id,
                     CoordinateSystemId::root(),
-                    "vis node in the root coordinate system must give an exact culling rect",
+                    "raster node in the root coordinate system must give an exact culling rect",
                 );
-                VisRect::max_rect()
+                RasterRect::max_rect()
             }
         };
 
@@ -373,7 +344,7 @@ impl SurfaceInfo {
         #[cfg(debug_assertions)]
         if let Some(round_trip) = Some(&culling_rect)
             .filter(|_| !culling_rect_projection_failed)
-            .and_then(|rect| map_vis_to_root.map(rect))
+            .and_then(|rect| map_raster_to_root.map(rect))
         {
             const EPSILON: f32 = 0.05;
             debug_assert!(
@@ -393,7 +364,6 @@ impl SurfaceInfo {
             map_local_to_picture,
             raster_spatial_node_index,
             surface_spatial_node_index,
-            visibility_spatial_node_index,
             device_pixel_scale,
             world_scale_factors,
             blur_scale_factors,
@@ -435,13 +405,13 @@ impl SurfaceInfo {
 
     /// Derive this surface's culling rect from the one the parent surface uses.
     ///
-    /// The parent's rect is in the parent's vis space, which is not this
-    /// surface's whenever the two pick different vis nodes, so it is mapped
-    /// across before anything else looks at it.
+    /// The parent's rect is in the parent's raster space, which is not this
+    /// surface's whenever this surface establishes its own raster root, so it is
+    /// mapped across before anything else looks at it.
     pub fn update_culling_rect(
         &mut self,
-        parent_vis_spatial_node_index: SpatialNodeIndex,
-        parent_culling_rect: VisRect,
+        parent_raster_spatial_node_index: SpatialNodeIndex,
+        parent_culling_rect: RasterRect,
         composite_mode: &PictureCompositeMode,
         frame_context: &FrameVisibilityContext,
     ) {
@@ -449,25 +419,25 @@ impl SurfaceInfo {
         // the general path instead would round-trip `max_rect` through
         // projections that clip against the near plane, and the result need not
         // still cover everything.
-        if parent_culling_rect == VisRect::max_rect() {
+        if parent_culling_rect == RasterRect::max_rect() {
             self.culling_rect = parent_culling_rect;
             return;
         }
 
-        let parent_culling_rect = if parent_vis_spatial_node_index == self.visibility_spatial_node_index {
+        let parent_culling_rect = if parent_raster_spatial_node_index == self.raster_spatial_node_index {
             parent_culling_rect
         } else {
-            // Cross between the two vis spaces via the screen. The spatial tree
-            // only relates a node to one of its ancestors, and neither vis node
-            // need be an ancestor of the other, but both always relate to the
-            // root.
-            let map_parent_to_root = vis_to_root_mapper(
-                parent_vis_spatial_node_index,
+            // Cross between the two raster spaces via the screen. The spatial
+            // tree only relates a node to one of its ancestors, and neither
+            // raster node need be an ancestor of the other, but both always
+            // relate to the root.
+            let map_parent_to_root = raster_to_root_mapper(
+                parent_raster_spatial_node_index,
                 frame_context.global_screen_device_rect,
                 frame_context.spatial_tree,
             );
-            let map_vis_to_root = vis_to_root_mapper(
-                self.visibility_spatial_node_index,
+            let map_raster_to_root = raster_to_root_mapper(
+                self.raster_spatial_node_index,
                 frame_context.global_screen_device_rect,
                 frame_context.spatial_tree,
             );
@@ -476,16 +446,16 @@ impl SurfaceInfo {
                 .as_2d_scale_offset()
                 .and_then(|_| map_parent_to_root.map(&parent_culling_rect))
                 .and_then(|device_rect| {
-                    map_vis_to_root
+                    map_raster_to_root
                         .as_2d_scale_offset()
-                        .and_then(|_| map_vis_to_root.unmap(&device_rect))
+                        .and_then(|_| map_raster_to_root.unmap(&device_rect))
                 });
 
             match projected {
                 Some(rect) => rect,
                 None => {
                     // Cull nothing rather than everything; see `culling_rect`.
-                    self.culling_rect = VisRect::max_rect();
+                    self.culling_rect = RasterRect::max_rect();
                     return;
                 }
             }
@@ -496,8 +466,8 @@ impl SurfaceInfo {
         // outside its own destination. Expand by what the composite mode reads,
         // in surface space where those amounts are expressed, so the content
         // feeding those samples stays inside the culling rect.
-        let map_surface_to_vis: SpaceMapper<PicturePixel, VisPixel> = SpaceMapper::new_with_target(
-            self.visibility_spatial_node_index,
+        let map_surface_to_raster: SpaceMapper<PicturePixel, RasterPixel> = SpaceMapper::new_with_target(
+            self.raster_spatial_node_index,
             self.surface_spatial_node_index,
             parent_culling_rect,
             frame_context.spatial_tree,
@@ -505,14 +475,14 @@ impl SurfaceInfo {
 
         // Unmapping to surface space may be quite conservative in the case of a
         // complex transform, especially perspective.
-        let expanded = map_surface_to_vis
+        let expanded = map_surface_to_raster
             .unmap(&parent_culling_rect)
             .map(|local_rect| composite_mode.get_required_source_rect(self, local_rect.cast_unit()))
-            .and_then(|required_rect| map_surface_to_vis.map(&required_rect.cast_unit()));
+            .and_then(|required_rect| map_surface_to_raster.map(&required_rect.cast_unit()));
 
         // A failed mapping must not leave the un-expanded rect in place: that is
         // exactly the rect that culls the content the expansion exists to keep.
-        self.culling_rect = expanded.unwrap_or_else(VisRect::max_rect);
+        self.culling_rect = expanded.unwrap_or_else(RasterRect::max_rect);
     }
 
     pub fn map_to_device_rect(

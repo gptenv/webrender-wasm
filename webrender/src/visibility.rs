@@ -307,13 +307,13 @@ pub fn update_prim_visibility(
             if let Some(parent_surface_index) = parent_surface_index {
                 let parent_surface = &frame_state.surfaces[parent_surface_index.0];
                 let parent_culling_rect = parent_surface.culling_rect;
-                let parent_vis_spatial_node_index = parent_surface.visibility_spatial_node_index;
+                let parent_raster_spatial_node_index = parent_surface.raster_spatial_node_index;
 
                 let surface = &mut frame_state
                     .surfaces[raster_config.surface_index.0 as usize];
 
                 surface.update_culling_rect(
-                    parent_vis_spatial_node_index,
+                    parent_raster_spatial_node_index,
                     parent_culling_rect,
                     &raster_config.composite_mode,
                     frame_context,
@@ -346,14 +346,14 @@ pub fn update_prim_visibility(
 
     let mut map_local_to_picture = surface.map_local_to_picture.clone();
 
-    let visibility_spatial_node_index = surface.visibility_spatial_node_index;
+    let raster_spatial_node_index = surface.raster_spatial_node_index;
 
     if surface.culling_rect_projection_failed {
         frame_state.profile.add(profiler::VIS_CULLING_RECT_FALLBACKS, 1);
     }
 
-    let map_surface_to_vis = SpaceMapper::new_with_target(
-        visibility_spatial_node_index,
+    let map_surface_to_raster = SpaceMapper::new_with_target(
+        raster_spatial_node_index,
         surface.surface_spatial_node_index,
         surface.culling_rect,
         frame_context.spatial_tree,
@@ -492,7 +492,7 @@ pub fn update_prim_visibility(
             frame_state.clip_store.set_active_clips(
                 cluster.spatial_node_index,
                 map_local_to_picture.ref_spatial_node_index,
-                visibility_spatial_node_index,
+                raster_spatial_node_index,
                 &mut clip_snapper,
                 policy.clip,
                 prim_instance.clip_node_id,
@@ -508,7 +508,7 @@ pub fn update_prim_visibility(
                 .build_clip_chain_instance(
                     local_coverage_rect,
                     &map_local_to_picture,
-                    &map_surface_to_vis,
+                    &map_surface_to_raster,
                     &mut frame_state.frame_gpu_data.f32,
                     frame_state.resource_cache,
                     &surface_culling_rect,

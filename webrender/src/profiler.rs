@@ -330,8 +330,8 @@ pub const VIS_CLIP_REJECTS: usize = 143;
 /// had no pre-image in visibility space. Zero while visibility space is
 /// axis-aligned with the screen.
 pub const VIS_CULLING_RECT_FALLBACKS: usize = 144;
-/// Clips whose space cannot be related to the visibility space at all, so a
-/// mask is assumed. Non-zero only for a clip outside the 3D context that
+/// Clips whose space cannot be related to the surface's raster space at all, so
+/// a mask is assumed. Non-zero only for a clip outside the 3D context that
 /// established the surface's raster root.
 pub const VIS_CLIP_INDETERMINATE: usize = 145;
 

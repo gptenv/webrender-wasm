@@ -76,8 +76,7 @@ executes the passes in order, and composites.
   pattern architecture described above and still describes the retired brush
   shaders.
 - `gfx/wr/webrender/doc/coordinate-spaces.md` — the spatial tree, and the
-  local / picture / raster / world / device spaces. Predates the `VisPixel`
-  visibility space.
+  local / picture / raster / world / device spaces.
 - `gfx/wr/webrender/doc/text-rendering.md`, `blob.md`,
   `CLIPPING_AND_POSITIONING.md`, `swizzling.md` — subsystem deep dives, in
   varying states of currency.
