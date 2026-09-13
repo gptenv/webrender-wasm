@@ -245,6 +245,7 @@ fn push_rotated_rect(
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
     );

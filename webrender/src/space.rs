@@ -623,6 +623,7 @@ mod tests {
             ReferenceFrameKind::Transform {
                 is_2d_scale_translation: true,
                 should_snap: false,
+                snap_origin: false,
                 paired_with_perspective: false,
             },
             LayoutVector2D::zero(),
@@ -696,6 +697,7 @@ mod tests {
             ReferenceFrameKind::Transform {
                 is_2d_scale_translation: false,
                 should_snap: false,
+                snap_origin: false,
                 paired_with_perspective: false,
             },
             LayoutVector2D::zero(),

@@ -192,6 +192,7 @@ impl SceneSpatialTree {
             PropertyBinding::Value(LayoutTransform::identity()),
             ReferenceFrameKind::Transform {
                 should_snap: true,
+                snap_origin: false,
                 is_2d_scale_translation: true,
                 paired_with_perspective: false,
             },
@@ -1211,6 +1212,7 @@ fn add_reference_frame(
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         origin_in_parent_reference_frame,
@@ -1486,6 +1488,7 @@ fn test_find_scroll_root_simple() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1520,6 +1523,7 @@ fn test_find_scroll_root_sub_scroll_frame() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1566,6 +1570,7 @@ fn test_find_scroll_root_not_scrollable() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1612,6 +1617,7 @@ fn test_find_scroll_root_too_small() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1659,6 +1665,7 @@ fn test_find_scroll_root_perspective() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1718,6 +1725,7 @@ fn test_find_scroll_root_2d_scale() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1744,6 +1752,7 @@ fn test_find_scroll_root_2d_scale() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1779,6 +1788,7 @@ fn test_find_scroll_root_sticky() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::new(0.0, 0.0),
@@ -1912,6 +1922,7 @@ fn test_is_ancestor_or_self_animating() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::zero(),
@@ -1936,6 +1947,7 @@ fn test_is_ancestor_or_self_animating() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::zero(),
@@ -1954,6 +1966,7 @@ fn test_is_ancestor_or_self_animating() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: true,
             should_snap: true,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::zero(),

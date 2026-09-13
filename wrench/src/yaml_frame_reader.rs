@@ -576,6 +576,7 @@ impl YamlFrameReader {
             let kind = ReferenceFrameKind::Transform {
                 is_2d_scale_translation: true,
                 should_snap: false,
+                snap_origin: false,
                 paired_with_perspective: false,
             };
 
@@ -2078,6 +2079,7 @@ impl YamlFrameReader {
             ReferenceFrameKind::Transform {
                 is_2d_scale_translation: is_2d,
                 should_snap,
+                snap_origin: false,
                 paired_with_perspective: yaml["paired-with-perspective"].as_bool().unwrap_or(false),
             }
         };
@@ -2217,6 +2219,7 @@ impl YamlFrameReader {
                     ReferenceFrameKind::Transform {
                         is_2d_scale_translation: true,
                         should_snap: false,
+                        snap_origin: false,
                         paired_with_perspective: false,
                     },
                 )

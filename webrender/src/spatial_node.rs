@@ -421,25 +421,31 @@ impl SpatialNode {
                     ReferenceFrameKind::Transform { .. } => source_transform,
                 };
 
-                // An axis-aligned reference frame composes into a `ScaleOffset`,
-                // so its accumulated device offset is snapped below (the
-                // `should_snap` round on `cs_scale_offset`); the origin is used
-                // as-is here. A non-axis-aligned frame (skew / rotation /
-                // perspective) doesn't compose into a `ScaleOffset`, so that
-                // path can't reach it, and the frame-time rect pass can't either
-                // (`SpaceSnapper` won't snap across a non-axis-aligned frame), so
-                // snap the origin's device position here instead - otherwise a
-                // fractional origin shifts all content below it.
-                let parent_origin = match info.source_transform {
-                    PropertyBinding::Value(ref value)
-                        if ScaleOffset::from_transform(value).is_none() =>
-                    {
-                        snap_offset(
-                            info.origin_in_parent_reference_frame,
-                            state.coordinate_system_relative_scale_offset.scale,
-                        )
-                    }
-                    _ => info.origin_in_parent_reference_frame,
+                // Round the origin's device position before this frame's own
+                // transform is applied on top of it, either because the producer
+                // asked us to or because the transform is not axis-aligned (skew
+                // / rotation / perspective) and so composes into no `ScaleOffset`
+                // - nothing else would reach the origin then, neither the
+                // `should_snap` round below nor the frame-time rect pass
+                // (`SpaceSnapper` won't snap across such a frame). A fractional
+                // origin otherwise shifts all content below it. Note the
+                // `should_snap` round can't stand in for this: it rounds the
+                // offset the frame composes to, the transform's own translation
+                // included.
+                let snap_origin = matches!(
+                    info.kind,
+                    ReferenceFrameKind::Transform { snap_origin: true, .. }
+                ) || match info.source_transform {
+                    PropertyBinding::Value(ref value) => ScaleOffset::from_transform(value).is_none(),
+                    PropertyBinding::Binding(..) => false,
+                };
+                let parent_origin = if snap_origin {
+                    snap_offset(
+                        info.origin_in_parent_reference_frame,
+                        state.coordinate_system_relative_scale_offset.scale,
+                    )
+                } else {
+                    info.origin_in_parent_reference_frame
                 };
 
                 let resolved_transform =
@@ -939,6 +945,7 @@ fn test_cst_perspective_relative_scroll() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::zero(),
@@ -1015,6 +1022,7 @@ fn test_cst_perspective_relative_sticky() {
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            snap_origin: false,
             paired_with_perspective: false,
         },
         LayoutVector2D::zero(),
