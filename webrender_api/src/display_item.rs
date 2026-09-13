@@ -824,11 +824,6 @@ pub enum ReferenceFrameKind {
         /// Marks that the transform should be snapped. Used for transforms which animate in
         /// response to scrolling, eg for zooming or dynamic toolbar fixed-positioning.
         should_snap: bool,
-        /// Marks that the frame's origin should be rounded to the device pixel grid before
-        /// the transform is applied on top of it. Set by producers that leave reference-frame
-        /// origins unrounded for us (Gecko does, see nsLayoutUtils::ShouldSnapToGrid); a
-        /// fractional origin otherwise shifts everything below the frame off the grid.
-        snap_origin: bool,
         /// Marks the transform being a part of the CSS stacking context that also has
         /// a perspective. In this case, backface visibility takes this perspective into
         /// account.
@@ -2473,7 +2468,6 @@ impl_default_for_enums! {
     ReferenceFrameKind => Transform {
         is_2d_scale_translation: false,
         should_snap: false,
-        snap_origin: false,
         paired_with_perspective: false,
     },
     Rotation => Degree0,

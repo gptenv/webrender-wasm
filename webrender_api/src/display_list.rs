@@ -2113,7 +2113,6 @@ impl DisplayListBuilder {
                 kind: di::ReferenceFrameKind::Transform {
                     is_2d_scale_translation: false,
                     should_snap: false,
-                    snap_origin: false,
                     paired_with_perspective: false,
                 },
                 id,
@@ -2341,24 +2340,6 @@ impl DisplayListBuilder {
     /// spatial node.
     fn record_scroll_offset(&mut self, spatial_id: di::SpatialId, offset: AuOffset) {
         self.spatial_offsets.insert(spatial_id, offset);
-    }
-
-    /// The accumulated external scroll offset for `spatial_id`, in this list's
-    /// pixels. This is the offset `normalize_rect` adds, so a caller that needs
-    /// to reason about the coordinates an item will actually be snapped at -
-    /// rather than the pre-scrolled ones it authored - can apply it itself.
-    /// Exposed so that decision uses the same accumulation as normalization
-    /// instead of re-deriving a sum that could drift from it.
-    pub fn accumulated_scroll_offset_px(
-        &mut self,
-        spatial_id: di::SpatialId,
-    ) -> LayoutVector2D {
-        let offset = self.accumulated_scroll_offset(spatial_id);
-        let grid = self.au_grid;
-        LayoutVector2D::new(
-            grid.from_au(offset.x as f64),
-            grid.from_au(offset.y as f64),
-        )
     }
 
     /// Translate a rect from Gecko's pre-scrolled (painted) coordinates into

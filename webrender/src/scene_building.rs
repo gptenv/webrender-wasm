@@ -1224,7 +1224,6 @@ impl<'a> SceneBuilder<'a> {
             ReferenceFrameKind::Transform {
                 is_2d_scale_translation: true,
                 should_snap: true,
-                snap_origin: false,
                 paired_with_perspective: false,
             },
             origin.to_vector(),
@@ -2549,7 +2548,6 @@ impl<'a> SceneBuilder<'a> {
             ReferenceFrameKind::Transform {
                 is_2d_scale_translation: true,
                 should_snap: true,
-                snap_origin: false,
                 paired_with_perspective: false,
             },
             LayoutVector2D::zero(),
