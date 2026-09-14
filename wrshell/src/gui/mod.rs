@@ -9,6 +9,7 @@ mod textures;
 mod composite_view;
 mod draw_calls;
 mod scene_tree;
+mod shaders;
 mod timeline;
 
 use eframe::egui;
@@ -94,6 +95,7 @@ struct DataModel {
     frame_log: FrameLog,
     timeline: timeline::Timeline,
     scene_tree: scene_tree::SceneTreeState,
+    shaders: shaders::ShaderEditorState,
 }
 
 impl DataModel {
@@ -109,6 +111,7 @@ impl DataModel {
             frame_log: FrameLog::new(),
             timeline: timeline::Timeline::new(),
             scene_tree: scene_tree::SceneTreeState::new(),
+            shaders: shaders::ShaderEditorState::new(),
         }
     }
 }
@@ -123,6 +126,7 @@ pub enum Tool {
     DrawCalls,
     Timeline,
     SceneTree,
+    Shaders,
 }
 
 impl egui_tiles::Behavior<Tool> for Gui {
@@ -136,6 +140,7 @@ impl egui_tiles::Behavior<Tool> for Gui {
             Tool::DrawCalls => { "Draw calls" }
             Tool::Timeline => { "Timeline" }
             Tool::SceneTree => { "Scene" }
+            Tool::Shaders => { "Shaders" }
         };
 
         title.into()
@@ -155,6 +160,7 @@ impl egui_tiles::Behavior<Tool> for Gui {
                 Tool::DrawCalls => { draw_calls::ui(self, ui); }
                 Tool::Timeline => { timeline::ui(self, ui); }
                 Tool::SceneTree => { scene_tree::ui(self, ui); }
+                Tool::Shaders => { shaders::ui(self, ui); }
             }
         });
 
@@ -236,6 +242,7 @@ impl Gui {
                     tiles.insert_pane(Tool::Preview),
                     tiles.insert_pane(Tool::DrawCalls),
                     tiles.insert_pane(Tool::SceneTree),
+                    tiles.insert_pane(Tool::Shaders),
                 ];
                 let side = vec![
                     tiles.insert_pane(Tool::DebugFlags),
@@ -402,17 +409,7 @@ impl Gui {
                         self.data_model.log.push(msg);
                     }
                     command::CommandOutput::TextDocument { title, content } => {
-                        let title = format!("{} [id {}]", title, self.doc_id);
-                        self.doc_id += 1;
-                        self.data_model.preview_doc_index = Some(self.data_model.documents.len());
-                        self.data_model.documents.push(
-                            Document {
-                                title,
-                                kind: DocumentKind::Text {
-                                    content,
-                                }
-                            }
-                        );
+                        self.add_text_document(title, content);
                     }
                     command::CommandOutput::SerdeDocument { kind, ref content } => {
                         let title = format!("Compositor [id {}]", self.doc_id);
@@ -449,6 +446,21 @@ impl Gui {
                 );
             }
         }
+    }
+
+    /// Open a text document in the preview pane and make it the current one.
+    pub fn add_text_document(&mut self, title: String, content: String) {
+        let title = format!("{} [id {}]", title, self.doc_id);
+        self.doc_id += 1;
+        self.data_model.preview_doc_index = Some(self.data_model.documents.len());
+        self.data_model.documents.push(
+            Document {
+                title,
+                kind: DocumentKind::Text {
+                    content,
+                }
+            }
+        );
     }
 
     fn handle_network_event(&mut self, event: net::NetworkEvent) {
@@ -516,6 +528,7 @@ impl Gui {
                         for diagnostic in &diagnostics {
                             self.data_model.log.push(format_shader_diagnostic(diagnostic));
                         }
+                        self.data_model.shaders.push_streamed_diagnostics(&diagnostics);
                     }
                 }
             }
@@ -643,5 +656,5 @@ struct GuiSavedState {
 impl GuiSavedState {
     /// Update this number to reset the configuration. This ensures that new
     /// panels are added.
-    const VERSION: u32 = 3;
+    const VERSION: u32 = 4;
 }
