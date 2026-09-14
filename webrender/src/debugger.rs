@@ -12,7 +12,7 @@ use api::{DebugFlags, RenderBackendId, TextureCacheCategory};
 use api::debugger::{DebuggerMessage, SetDebugFlagsMessage, ProfileCounterDescriptor};
 use api::debugger::{FrameLogMessage, InitProfileCountersMessage, ProfileCounterId};
 use api::debugger::{CompositorDebugInfo, CompositorDebugTile, RenderDocReply, SceneDebugOverride};
-use api::debugger::{SetShaderSourceRequest, ShaderReloadReply};
+use api::debugger::{SetShaderSourceRequest, ShaderDiagnostic, ShaderReloadReply};
 use std::thread;
 use base64::prelude::*;
 use sha1::{Sha1, Digest};
@@ -160,6 +160,7 @@ impl Debugger {
         debug_flags: DebugFlags,
         profiler: &Profiler,
         command_log: &Option<RenderCommandLog>,
+        shader_errors: &[ShaderDiagnostic],
     ) {
         let mut clients_to_keep = Vec::new();
 
@@ -180,9 +181,19 @@ impl Debugger {
                 render_commands,
             };
 
-            if client.send_msg(DebuggerMessage::UpdateFrameLog(msg)) {
-                clients_to_keep.push(client);
+            if !client.send_msg(DebuggerMessage::UpdateFrameLog(msg)) {
+                continue;
             }
+
+            if !shader_errors.is_empty()
+                && !client.send_msg(DebuggerMessage::ShaderCompileErrors(
+                    shader_errors.to_vec(),
+                ))
+            {
+                continue;
+            }
+
+            clients_to_keep.push(client);
         }
 
         self.clients = clients_to_keep;

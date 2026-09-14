@@ -43,6 +43,13 @@ pub enum DebuggerMessage {
     SetDebugFlags(SetDebugFlagsMessage),
     InitProfileCounters(InitProfileCountersMessage),
     UpdateFrameLog(FrameLogMessage),
+    /// Shader build failures from the frame just rendered.
+    ///
+    /// A source pushed via `POST /shader-source` only rebuilds the variants
+    /// that had already been compiled. One that had not fails when it is first
+    /// used instead, which can be many frames later, so those failures are
+    /// streamed rather than reported in the reply to the push.
+    ShaderCompileErrors(Vec<ShaderDiagnostic>),
 }
 
 /// Reply to a `/renderdoc-capture` request: the path of the written `.rdc` file

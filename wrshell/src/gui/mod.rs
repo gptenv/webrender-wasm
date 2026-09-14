@@ -14,6 +14,7 @@ mod timeline;
 use eframe::egui;
 use webrender_api::{DebugFlags, RenderCommandInfo};
 use webrender_api::debugger::{DebuggerMessage, DebuggerTextureContent, ProfileCounterId, CompositorDebugInfo};
+use webrender_api::debugger::{ShaderDiagnostic, ShaderStage};
 use crate::{command, net};
 use std::collections::{HashMap, BTreeMap, VecDeque};
 use std::fs;
@@ -21,6 +22,23 @@ use std::io::Write;
 use std::sync::mpsc;
 
 use profiler::Graph;
+
+/// Render a shader diagnostic as `file:line:column: message`, falling back to
+/// the variant name when the driver reported no location.
+pub fn format_shader_diagnostic(diagnostic: &ShaderDiagnostic) -> String {
+    let stage = match diagnostic.stage {
+        ShaderStage::Compile => "compile",
+        ShaderStage::Link => "link",
+    };
+
+    let location = match (&diagnostic.file, diagnostic.line, diagnostic.column) {
+        (Some(file), Some(line), Some(column)) => format!("{}:{}:{}", file, line, column),
+        (Some(file), Some(line), None) => format!("{}:{}", file, line),
+        _ => diagnostic.variant.clone(),
+    };
+
+    format!("[{} {}] {}: {}", stage, diagnostic.variant, location, diagnostic.message)
+}
 
 #[allow(dead_code)]
 enum ApplicationEvent {
@@ -493,6 +511,11 @@ impl Gui {
                         }
 
                         self.data_model.timeline.current_frame = current;
+                    }
+                    DebuggerMessage::ShaderCompileErrors(diagnostics) => {
+                        for diagnostic in &diagnostics {
+                            self.data_model.log.push(format_shader_diagnostic(diagnostic));
+                        }
                     }
                 }
             }

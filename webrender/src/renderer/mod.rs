@@ -1891,11 +1891,27 @@ impl Renderer {
         // If debugger is enabled, collect any profiler updates before value is overwritten
         // during update below.
         #[cfg(feature = "debugger")]
-        self.debugger.update(
-            self.debug_flags,
-            &self.profiler,
-            &self.command_log,
-        );
+        {
+            // Shader failures accumulated while drawing this frame. These are
+            // the ones a source push could not report, because the variant
+            // had not been compiled yet when the push happened.
+            let shader_errors: Vec<ShaderDiagnostic> = self
+                .renderer_errors
+                .iter()
+                .filter_map(|error| match error {
+                    RendererError::Shader(error) => Some(error),
+                    _ => None,
+                })
+                .flat_map(shader_diagnostics)
+                .collect();
+
+            self.debugger.update(
+                self.debug_flags,
+                &self.profiler,
+                &self.command_log,
+                &shader_errors,
+            );
+        }
 
         // Note: profile counters must be set before this or they will count for next frame.
         self.profiler.update();
