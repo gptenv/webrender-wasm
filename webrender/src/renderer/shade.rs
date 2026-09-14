@@ -204,9 +204,10 @@ impl LazilyCompiledShader {
             }
         }
 
-        let program = self.program.as_mut().unwrap();
+        let needs_link = precache_flags.contains(ShaderPrecacheFlags::FULL_COMPILE)
+            && !self.program.as_ref().unwrap().is_initialized();
 
-        if precache_flags.contains(ShaderPrecacheFlags::FULL_COMPILE) && !program.is_initialized() {
+        if needs_link {
             let start_time = zeitstempel::now();
 
             let vertex_format = match self.kind {
@@ -231,7 +232,19 @@ impl LazilyCompiledShader {
                 VertexArrayKind::Mask => &desc::MASK,
             };
 
-            device.link_program(program, vertex_descriptor)?;
+            let program = self.program.as_mut().unwrap();
+            if let Err(err) = device.link_program(program, vertex_descriptor) {
+                // A failed link deletes the program object, so drop it rather
+                // than retrying against a dead GL name on the next bind. The
+                // next attempt builds a fresh one, which is what makes a
+                // shader that has been fixed since recover on its own.
+                if let Some(program) = self.program.take() {
+                    device.delete_program(program);
+                }
+                return Err(err);
+            }
+
+            let program = self.program.as_mut().unwrap();
             device.bind_program(program);
             device.bind_shader_samplers(
                 &program,
@@ -256,7 +269,7 @@ impl LazilyCompiledShader {
             }
         }
 
-        Ok(program)
+        Ok(self.program.as_mut().unwrap())
     }
 
     fn deinit(self, device: &mut Device) {

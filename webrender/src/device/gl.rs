@@ -35,7 +35,8 @@ use std::{
     time::Duration,
 };
 use webrender_build::shader::{
-    ProgramSourceDigest, ShaderFeatureFlags, ShaderKind, ShaderSourceMap, ShaderVersion,
+    ProgramSourceDigest, ShaderFeatureFlags, ShaderKind, ShaderLogLine, ShaderSourceMap,
+    ShaderVersion,
     build_shader_main_string, build_shader_prefix_string, do_build_shader_string,
     shader_source_from_file,
 };
@@ -810,7 +811,14 @@ impl ProgramSourceInfo {
         }
     }
 
-    fn compute_source(&self, device: &Device, kind: ShaderKind) -> String {
+    /// Build the source to hand to the driver, along with the map needed to
+    /// resolve the driver's log back to the `.glsl` sources. Optimized sources
+    /// are preprocessed at build time and have no map.
+    fn compute_source(
+        &self,
+        device: &Device,
+        kind: ShaderKind,
+    ) -> (String, Option<ShaderSourceMap>) {
         let full_name = self.full_name();
         match self.source_type {
             ProgramSourceType::Optimized(gl_version) => {
@@ -818,20 +826,21 @@ impl ProgramSourceInfo {
                     .get(&(gl_version, &full_name))
                     .unwrap_or_else(|| panic!("Missing optimized shader source for {}", full_name));
 
-                match kind {
+                let source = match kind {
                     ShaderKind::Vertex => shader.vert_source.to_string(),
                     ShaderKind::Fragment => shader.frag_source.to_string(),
-                }
+                };
+                (source, None)
             },
             ProgramSourceType::Unoptimized => {
                 let mut src = String::new();
-                device.build_shader_string(
+                let source_map = device.build_shader_string(
                     &self.features,
                     kind,
                     self.base_filename,
                     |s| src.push_str(s),
                 );
-                src
+                (src, Some(source_map))
             }
         }
     }
@@ -1148,8 +1157,34 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug)]
 pub enum ShaderError {
-    Compilation(String, String), // name, error message
-    Link(String, String),        // name, error message
+    /// Variant name, the driver's raw log, and the log parsed into per-line
+    /// diagnostics with locations resolved back to the `.glsl` sources.
+    Compilation(String, String, Vec<ShaderLogLine>),
+    /// Variant name, the driver's raw log, and its parsed diagnostics. Link
+    /// logs rarely carry locations, so the diagnostics are usually unmapped.
+    Link(String, String, Vec<ShaderLogLine>),
+}
+
+impl ShaderError {
+    pub fn name(&self) -> &str {
+        match self {
+            ShaderError::Compilation(name, ..) | ShaderError::Link(name, ..) => name,
+        }
+    }
+
+    pub fn log(&self) -> &str {
+        match self {
+            ShaderError::Compilation(_, log, _) | ShaderError::Link(_, log, _) => log,
+        }
+    }
+
+    pub fn diagnostics(&self) -> &[ShaderLogLine] {
+        match self {
+            ShaderError::Compilation(.., diagnostics) | ShaderError::Link(.., diagnostics) => {
+                diagnostics
+            }
+        }
+    }
 }
 
 /// A refcounted depth target, which may be shared by multiple textures across
@@ -2323,30 +2358,12 @@ impl Device {
         self.gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, self.bound_draw_fbo.0);
     }
 
-    #[cfg(debug_assertions)]
-    fn print_shader_errors(source: &str, log: &str) {
-        // hacky way to extract the offending lines
-        if !log.starts_with("0:") && !log.starts_with("0(") {
-            return;
-        }
-        let end_pos = match log[2..].chars().position(|c| !c.is_digit(10)) {
-            Some(pos) => 2 + pos,
-            None => return,
-        };
-        let base_line_number = match log[2 .. end_pos].parse::<usize>() {
-            Ok(number) if number >= 2 => number - 2,
-            _ => return,
-        };
-        for (line, prefix) in source.lines().skip(base_line_number).zip(&["|",">","|"]) {
-            error!("{}\t{}", prefix, line);
-        }
-    }
-
     pub fn compile_shader(
         &self,
         name: &str,
         shader_type: gl::GLenum,
         source: &String,
+        source_map: Option<&ShaderSourceMap>,
     ) -> Result<gl::GLuint, ShaderError> {
         debug!("compile {}", name);
         let id = self.gl.create_shader(shader_type);
@@ -2371,10 +2388,19 @@ impl Device {
                 gl::FRAGMENT_SHADER => "fragment",
                 _ => panic!("Unexpected shader type {:x}", shader_type),
             };
-            error!("Failed to compile {} shader: {}\n{}", type_str, name, log);
-            #[cfg(debug_assertions)]
-            Self::print_shader_errors(source, &log);
-            Err(ShaderError::Compilation(name.to_string(), log))
+            let diagnostics = match source_map {
+                Some(source_map) => source_map.map_log(&log),
+                None => Vec::new(),
+            };
+            error!("Failed to compile {} shader: {}", type_str, name);
+            if diagnostics.is_empty() {
+                error!("{}", log);
+            } else {
+                for diagnostic in &diagnostics {
+                    error!("{}", diagnostic);
+                }
+            }
+            Err(ShaderError::Compilation(name.to_string(), log, diagnostics))
         } else {
             if !log.is_empty() {
                 warn!("Warnings detected on shader: {}\n{}", name, log);
@@ -2726,16 +2752,26 @@ impl Device {
         // If not, we need to do a normal compile + link pass.
         if build_program {
             // Compile the vertex shader
-            let vs_source = info.compute_source(self, ShaderKind::Vertex);
-            let vs_id = match self.compile_shader(&info.full_name(), gl::VERTEX_SHADER, &vs_source) {
+            let (vs_source, vs_source_map) = info.compute_source(self, ShaderKind::Vertex);
+            let vs_id = match self.compile_shader(
+                &info.full_name(),
+                gl::VERTEX_SHADER,
+                &vs_source,
+                vs_source_map.as_ref(),
+            ) {
                     Ok(vs_id) => vs_id,
                     Err(err) => return Err(err),
                 };
 
             // Compile the fragment shader
-            let fs_source = info.compute_source(self, ShaderKind::Fragment);
+            let (fs_source, fs_source_map) = info.compute_source(self, ShaderKind::Fragment);
             let fs_id =
-                match self.compile_shader(&info.full_name(), gl::FRAGMENT_SHADER, &fs_source) {
+                match self.compile_shader(
+                    &info.full_name(),
+                    gl::FRAGMENT_SHADER,
+                    &fs_source,
+                    fs_source_map.as_ref(),
+                ) {
                     Ok(fs_id) => fs_id,
                     Err(err) => {
                         self.gl.delete_shader(vs_id);
@@ -2791,8 +2827,21 @@ impl Device {
                     &info.base_filename,
                     error_log
                 );
+                // The program object is gone, so clear the id rather than
+                // leaving the caller holding a dangling GL name that a later
+                // link or delete would operate on.
                 self.gl.delete_program(program.id);
-                return Err(ShaderError::Link(info.base_filename.to_owned(), error_log));
+                if self.bound_program == program.id {
+                    self.gl.use_program(0);
+                    self.bound_program = 0;
+                }
+                program.id = 0;
+                let diagnostics = ShaderSourceMap::new().map_log(&error_log);
+                return Err(ShaderError::Link(
+                    info.base_filename.to_owned(),
+                    error_log,
+                    diagnostics,
+                ));
             }
 
             if let Some(ref cached_programs) = self.cached_programs {
@@ -3273,6 +3322,16 @@ impl Device {
     }
 
     pub fn delete_program(&mut self, mut program: Program) {
+        if program.id == 0 {
+            return;
+        }
+        // GL recycles names, so a program created after this one is deleted can
+        // be handed the same id. Drop the binding cache entry, otherwise
+        // `bind_program` would skip the `use_program` call for the new program.
+        if self.bound_program == program.id {
+            self.gl.use_program(0);
+            self.bound_program = 0;
+        }
         self.gl.delete_program(program.id);
         program.id = 0;
     }
@@ -3331,7 +3390,7 @@ impl Device {
         kind: ShaderKind,
         base_filename: &str,
         output: F,
-    ) {
+    ) -> ShaderSourceMap {
         let mut source_map = ShaderSourceMap::new();
         do_build_shader_string(
             get_shader_version(&*self.gl),
@@ -3341,7 +3400,8 @@ impl Device {
             &mut source_map,
             &|f| get_unoptimized_shader_source(f, self.resource_override_path.as_ref()),
             output,
-        )
+        );
+        source_map
     }
 
     pub fn bind_shader_samplers<S>(&mut self, program: &Program, bindings: &[(&'static str, S)])
