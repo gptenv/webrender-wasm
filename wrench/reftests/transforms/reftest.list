@@ -67,3 +67,4 @@ fuzzy(5,100) fuzzy-if(platform(win),1,201) == corner-scale.yaml corner-scale-2.y
 # Run the scaled version only on linux to avoid complicated fuzzy annotations.
 scale(1,2) platform(linux) fuzzy(5,100) == corner-scale.yaml corner-scale-2.yaml
 scale(0.51,1.51) platform(linux) fuzzy(72,700) == corner-scale.yaml corner-scale-2.yaml
+== quad-huge-scale-down-aa.yaml quad-huge-scale-down-aa-ref.yaml

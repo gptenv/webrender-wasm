@@ -679,12 +679,6 @@ fn prepare_quad_impl(
 
     let mut quad_flags = QuadFlags::empty();
 
-    // Only use AA edge instances if the drawn area is large enough to require it
-    let prim_size = desc.bounds.size();
-    if prim_size.width > MIN_AA_SEGMENTS_SIZE && prim_size.height > MIN_AA_SEGMENTS_SIZE {
-        quad_flags |= QuadFlags::USE_AA_SEGMENTS;
-    }
-
     let needs_scissor = !prim_is_2d_scale_translation;
     if !needs_scissor {
         quad_flags |= QuadFlags::APPLY_RENDER_TASK_CLIP;
@@ -735,6 +729,14 @@ fn prepare_quad_impl(
                 spatial_tree,
             ),
         };
+
+        // Only use AA edge instances if the drawn area is large enough to require it.
+        if device_bounds.width() > MIN_AA_SEGMENTS_SIZE
+            && device_bounds.height() > MIN_AA_SEGMENTS_SIZE
+            && local_bounds.width() > MIN_AA_SEGMENTS_SIZE
+            && local_bounds.height() > MIN_AA_SEGMENTS_SIZE {
+            quad_flags |= QuadFlags::USE_AA_SEGMENTS;
+        }
 
         // Render the primitive as a single instance. Coordinates are provided to the
         // shader in layout space.
@@ -804,6 +806,14 @@ fn prepare_quad_impl(
 
     if clipped_surface_rect.is_empty() {
         return;
+    }
+
+    // Only use AA edge instances if the drawn area is large enough to require it.
+    if clipped_surface_rect.width() > MIN_AA_SEGMENTS_SIZE
+        && clipped_surface_rect.height() > MIN_AA_SEGMENTS_SIZE
+        && local_bounds.width() > MIN_AA_SEGMENTS_SIZE
+        && local_bounds.height() > MIN_AA_SEGMENTS_SIZE {
+        quad_flags |= QuadFlags::USE_AA_SEGMENTS;
     }
 
     match strategy {
