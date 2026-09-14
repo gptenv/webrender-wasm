@@ -12,7 +12,7 @@ use api::units::*;
 use euclid::default::Transform3D;
 use gleam::gl;
 use crate::render_api::MemoryReport;
-use crate::internal_types::{FastHashMap, RenderTargetInfo, Swizzle, SwizzleSettings};
+use crate::internal_types::{FastHashMap, FastHashSet, RenderTargetInfo, Swizzle, SwizzleSettings};
 use crate::util::round_up_to_multiple;
 use crate::profiler;
 use log::Level;
@@ -38,6 +38,7 @@ use webrender_build::shader::{
     ProgramSourceDigest, ShaderFeatureFlags, ShaderKind, ShaderLogLine, ShaderSourceMap,
     ShaderVersion,
     build_shader_main_string, build_shader_prefix_string, do_build_shader_string,
+    shader_include_closure,
     shader_source_from_file,
 };
 use malloc_size_of::MallocSizeOfOps;
@@ -699,6 +700,10 @@ pub struct ProgramSourceInfo {
     features: Vec<&'static str>,
     full_name_cstr: Rc<std::ffi::CString>,
     source_type: ProgramSourceType,
+    /// Set when an in-memory source override contributed to this program. Such
+    /// a program must not be written to the binary program cache, so that a
+    /// throwaway edit cannot outlive the session it was made in.
+    has_source_override: bool,
     digest: ProgramSourceDigest,
 }
 
@@ -727,7 +732,12 @@ impl ProgramSourceInfo {
 
         let full_name = Self::make_full_name(name, features);
 
-        let optimized_source = if device.use_optimized_shaders {
+        // An overridden source only exists as `.glsl`, so the build-time
+        // optimized variant no longer describes this program. Without this the
+        // edit would be silently ignored wherever optimized shaders are in use.
+        let has_source_override = device.has_shader_source_override_for(name);
+
+        let optimized_source = if device.use_optimized_shaders && !has_source_override {
             OPTIMIZED_SHADERS.get(&(gl_version, &full_name)).or_else(|| {
                 warn!("Missing optimized shader source for {}", &full_name);
                 None
@@ -765,6 +775,7 @@ impl ProgramSourceInfo {
                 // define, so we don't need to hash both. Second, we precompute the digest of the
                 // expanded source file at build time, and then just hash that digest here.
                 let override_path = device.resource_override_path.as_ref();
+                let overridden = override_path.is_some() || has_source_override;
                 let source_and_digest = UNOPTIMIZED_SHADERS.get(&name).expect("Shader not found");
 
                 let mut source_map = ShaderSourceMap::new();
@@ -781,17 +792,17 @@ impl ProgramSourceInfo {
 
                 // Hash the shader file contents. We use a precomputed digest, and
                 // verify it in debug builds.
-                if override_path.is_some() || cfg!(debug_assertions) {
+                if overridden || cfg!(debug_assertions) {
                     let mut h = DefaultHasher::new();
                     build_shader_main_string(
                         &name,
-                        &|f| get_unoptimized_shader_source(f, override_path),
+                        &|f| device.get_shader_source(f),
                         &mut source_map,
                         &mut |s| h.write(s.as_bytes())
                     );
                     let d: ProgramSourceDigest = h.into();
                     let digest = format!("{}", d);
-                    debug_assert!(override_path.is_some() || digest == source_and_digest.digest);
+                    debug_assert!(overridden || digest == source_and_digest.digest);
                     hasher.write(digest.as_bytes());
                 } else {
                     hasher.write(source_and_digest.digest.as_bytes());
@@ -807,6 +818,7 @@ impl ProgramSourceInfo {
             features: features.to_vec(),
             full_name_cstr: Rc::new(std::ffi::CString::new(full_name).unwrap()),
             source_type,
+            has_source_override,
             digest: hasher.into(),
         }
     }
@@ -1333,6 +1345,16 @@ pub struct Device {
 
     /// Dumps the source of the shader with the given name
     dump_shader_source: Option<String>,
+
+    /// Shader sources pushed at runtime by the remote debugger, keyed by
+    /// `.glsl` file stem. Takes precedence over `resource_override_path` and
+    /// over the sources built into the binary.
+    shader_source_overrides: FastHashMap<String, String>,
+
+    /// `#include` closure of each shader, keyed by base filename. Only
+    /// populated while overrides are installed, and dropped whenever the
+    /// override set changes, since an edit can add or remove an `#include`.
+    shader_include_closures: RefCell<FastHashMap<String, FastHashSet<String>>>,
 
     surface_origin_is_top_left: bool,
 
@@ -2168,6 +2190,8 @@ impl Device {
             is_software_webrender,
             required_transfer_stride,
             dump_shader_source,
+            shader_source_overrides: FastHashMap::default(),
+            shader_include_closures: RefCell::new(FastHashMap::default()),
             surface_origin_is_top_left,
 
             #[cfg(debug_assertions)]
@@ -2845,7 +2869,9 @@ impl Device {
             }
 
             if let Some(ref cached_programs) = self.cached_programs {
-                if !cached_programs.entries.borrow().contains_key(&info.digest) {
+                if !info.has_source_override
+                    && !cached_programs.entries.borrow().contains_key(&info.digest)
+                {
                     let (buffer, format) = self.gl.get_program_binary(program.id);
                     if buffer.len() > 0 {
                         let binary = Arc::new(ProgramBinary::new(buffer, format, info.digest.clone()));
@@ -3384,6 +3410,93 @@ impl Device {
         Ok(program)
     }
 
+    /// Whether shader sources can be replaced at runtime.
+    ///
+    /// SWGL discards the GLSL it is handed and dispatches to a program
+    /// transpiled to C++ at build time (see `swgl::Context::shader_source`),
+    /// so there is nothing for an override to recompile.
+    pub fn supports_shader_source_override(&self) -> bool {
+        !self.is_software_webrender
+    }
+
+    /// Names of every `.glsl` file built into this binary, sorted.
+    pub fn shader_file_names(&self) -> Vec<&'static str> {
+        let mut names: Vec<&'static str> = UNOPTIMIZED_SHADERS.keys().cloned().collect();
+        names.sort_unstable();
+        names
+    }
+
+    /// The source built into the binary for `name`, ignoring any override.
+    pub fn builtin_shader_source(&self, name: &str) -> Option<&'static str> {
+        UNOPTIMIZED_SHADERS.get(name).map(|entry| entry.source)
+    }
+
+    /// The source currently in effect for `name`: the override if one is
+    /// installed, otherwise whatever `get_unoptimized_shader_source` resolves.
+    pub fn get_shader_source(&self, name: &str) -> Cow<'static, str> {
+        match self.shader_source_overrides.get(name) {
+            Some(source) => Cow::Owned(source.clone()),
+            None => get_unoptimized_shader_source(name, self.resource_override_path.as_ref()),
+        }
+    }
+
+    pub fn shader_source_override(&self, name: &str) -> Option<&str> {
+        self.shader_source_overrides.get(name).map(String::as_str)
+    }
+
+    pub fn has_shader_source_overrides(&self) -> bool {
+        !self.shader_source_overrides.is_empty()
+    }
+
+    pub fn set_shader_source_override(&mut self, name: &str, source: String) {
+        self.shader_source_overrides.insert(name.to_string(), source);
+        self.shader_include_closures.borrow_mut().clear();
+    }
+
+    /// Drop the override for `name`, returning whether there was one.
+    pub fn clear_shader_source_override(&mut self, name: &str) -> bool {
+        let had_override = self.shader_source_overrides.remove(name).is_some();
+        if had_override {
+            self.shader_include_closures.borrow_mut().clear();
+        }
+        had_override
+    }
+
+    /// The set of `.glsl` files `base_filename` pulls in, including itself.
+    pub fn shader_include_closure(&self, base_filename: &str) -> FastHashSet<String> {
+        if let Some(closure) = self.shader_include_closures.borrow().get(base_filename) {
+            return closure.clone();
+        }
+
+        let closure: FastHashSet<String> =
+            shader_include_closure(base_filename, &|f| self.get_shader_source(f))
+                .into_iter()
+                .collect();
+        self.shader_include_closures
+            .borrow_mut()
+            .insert(base_filename.to_string(), closure.clone());
+
+        closure
+    }
+
+    /// Whether any file `base_filename` pulls in, including itself, has an
+    /// override installed.
+    fn has_shader_source_override_for(&self, base_filename: &str) -> bool {
+        // The common case is no overrides at all, in which case there is no
+        // need to walk the include graph.
+        if self.shader_source_overrides.is_empty() {
+            return false;
+        }
+
+        if self.shader_source_overrides.contains_key(base_filename) {
+            return true;
+        }
+
+        self.shader_include_closure(base_filename)
+            .iter()
+            .any(|file| self.shader_source_overrides.contains_key(file))
+    }
+
     fn build_shader_string<F: FnMut(&str)>(
         &self,
         features: &[&'static str],
@@ -3398,7 +3511,7 @@ impl Device {
             kind,
             base_filename,
             &mut source_map,
-            &|f| get_unoptimized_shader_source(f, self.resource_override_path.as_ref()),
+            &|f| self.get_shader_source(f),
             output,
         );
         source_map

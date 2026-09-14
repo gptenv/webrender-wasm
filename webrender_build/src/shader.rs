@@ -278,6 +278,36 @@ impl ShaderSourceParser {
     }
 }
 
+/// Collect the set of `.glsl` files that `base_filename` pulls in through
+/// `#include`, including `base_filename` itself.
+pub fn shader_include_closure<G: Fn(&str) -> Cow<'static, str>>(
+    base_filename: &str,
+    get_source: &G,
+) -> HashSet<String> {
+    let mut included = HashSet::new();
+    collect_includes(base_filename, get_source, &mut included);
+    included
+}
+
+fn collect_includes<G: Fn(&str) -> Cow<'static, str>>(
+    filename: &str,
+    get_source: &G,
+    included: &mut HashSet<String>,
+) {
+    if !included.insert(filename.to_string()) {
+        return;
+    }
+
+    let source = get_source(filename);
+    for line in source.lines() {
+        if let Some(imports) = line.strip_prefix(SHADER_IMPORT) {
+            for import in imports.split(',') {
+                collect_includes(import, get_source, included);
+            }
+        }
+    }
+}
+
 /// Reads a shader source file from disk into a String.
 pub fn shader_source_from_file(shader_path: &Path) -> String {
     assert!(shader_path.exists(), "Shader not found {:?}", shader_path);
