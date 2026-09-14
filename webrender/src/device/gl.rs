@@ -3497,6 +3497,29 @@ impl Device {
             .any(|file| self.shader_source_overrides.contains_key(file))
     }
 
+    /// The preprocessed vertex and fragment source handed to the driver for
+    /// one variant, built from the sources currently in effect.
+    ///
+    /// This is the text a driver log's line numbers refer to when no known
+    /// driver pattern matched it and the location could not be resolved.
+    pub fn expanded_shader_source(
+        &self,
+        base_filename: &str,
+        features: &[&'static str],
+    ) -> (String, String) {
+        let mut vertex = String::new();
+        self.build_shader_string(features, ShaderKind::Vertex, base_filename, |s| {
+            vertex.push_str(s)
+        });
+
+        let mut fragment = String::new();
+        self.build_shader_string(features, ShaderKind::Fragment, base_filename, |s| {
+            fragment.push_str(s)
+        });
+
+        (vertex, fragment)
+    }
+
     fn build_shader_string<F: FnMut(&str)>(
         &self,
         features: &[&'static str],

@@ -140,6 +140,16 @@ impl LazilyCompiledShader {
         &self.features
     }
 
+    /// The name the driver sees, base filename plus features, as used in
+    /// compile and link logs.
+    pub fn full_name(&self) -> String {
+        if self.features.is_empty() {
+            self.name.to_string()
+        } else {
+            format!("{}_{}", self.name, self.features.join("_"))
+        }
+    }
+
     /// Whether this shader has a program that has been linked, and so has
     /// source compiled into it that an edit can invalidate.
     ///
