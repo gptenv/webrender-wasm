@@ -1513,9 +1513,12 @@ fn get_prim_render_strategy(
                     );
 
                     if let Some(clip_rect) = map_clip_to_prim.map(&clip_instance.clip_rect) {
+                        // The two spaces can be flipped with respect to one another,
+                        // in which case the mapped vector has negative components.
+                        // The nine-patch decomposition needs positive corner extents.
                         let radius = map_clip_to_prim.map_vector(
                             LayoutVector2D::new(max_corner_width + max_inset_width, max_corner_height + max_inset_height)
-                        );
+                        ).abs();
                         return QuadRenderStrategy::NinePatch {
                             radius,
                             clip_rect,
