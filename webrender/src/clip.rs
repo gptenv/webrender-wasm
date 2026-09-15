@@ -974,10 +974,10 @@ impl From<ClipItemKey> for ClipNode {
                     mode,
                 }
             }
-            ClipItemKeyKind::ImageMask(image, polygon_handle) => {
+            // The polygon is only read by the hit tester, at scene build.
+            ClipItemKeyKind::ImageMask(image, _) => {
                 ClipItemKind::Image {
                     image,
-                    polygon_handle,
                 }
             }
         };
@@ -1777,7 +1777,6 @@ pub enum ClipItemKind {
     },
     Image {
         image: ImageKey,
-        polygon_handle: Option<PolygonDataHandle>,
     },
 }
 
@@ -2385,7 +2384,6 @@ mod tests {
         assert_eq!(rad.top_left.width, 0.0);
         assert_eq!(rad.bottom_right.width, 0.0);
     }
-
 
     #[test]
     fn test_intersect_linux_window_corners() {
