@@ -490,6 +490,16 @@ impl StretchSizeKey {
             fills_height: true,
         }
     }
+
+    /// The tile size against `prim_rect`: a filling axis takes the rect's
+    /// extent, the other keeps the stored size.
+    pub fn resolve(&self, prim_rect: &LayoutRect) -> LayoutSize {
+        let stored: LayoutSize = self.size.into();
+        LayoutSize::new(
+            if self.fills_width { prim_rect.width() } else { stored.width },
+            if self.fills_height { prim_rect.height() } else { stored.height },
+        )
+    }
 }
 
 /// Hashable radial gradient parameters, for use during prim interning. The raw
