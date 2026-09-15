@@ -528,6 +528,13 @@ impl Wrench {
         self.dl_builders.insert(pipeline_id, builder);
     }
 
+    /// Forget every retained builder, so the next display list for a pipeline is
+    /// built by a new one. Models the content process for that pipeline being
+    /// replaced; see `test_invalidation`'s `new-builder` option.
+    pub fn drop_dl_builders(&mut self) {
+        self.dl_builders.clear();
+    }
+
     pub fn set_title(&mut self, extra: &str) {
         self.window_title_to_set = Some(format!(
             "Wrench: {} - {} - {}",
