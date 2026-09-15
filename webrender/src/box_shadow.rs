@@ -8,7 +8,7 @@ use crate::command_buffer::CommandBufferIndex;
 use crate::clip::{ClipChainInstance, ClipNodeId};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::intern::{Handle as InternHandle, InternDebug, Internable};
-use crate::prim_store::{InternablePrimitive, PrimKey, PrimTemplate, PrimTemplateCommonData, PrimitiveScratchBuffer};
+use crate::prim_store::{InternablePrimitive, PrimTemplate, PrimTemplateCommonData, PrimitiveScratchBuffer};
 use crate::prim_store::{PrimitiveKind, PrimitiveStore};
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
 use crate::pattern::box_shadow::BoxShadowPatternData;
@@ -23,13 +23,12 @@ use crate::spatial_tree::SpatialNodeIndex;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::util::clamp_to_scale_factor;
 
-pub type BoxShadowKey = PrimKey<BoxShadow>;
+// `BoxShadow` and its key live in `webrender_api::interned_prims` so
+// content-process interning can hold them. Re-exported to keep existing
+// references working.
+pub use api::interned_prims::{BoxShadow, BoxShadowKey};
 
 impl InternDebug for BoxShadowKey {}
-
-// `BoxShadow` now lives in `webrender_api::interned_prims` so content-process
-// interning can hold it. Re-exported to keep existing references working.
-pub use api::interned_prims::BoxShadow;
 
 impl IsVisible for BoxShadow {
     fn is_visible(&self) -> bool {

@@ -80,7 +80,7 @@ impl EdgeMask {
 }
 
 /// Fields common to every interned primitive key.
-#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, Eq, MallocSizeOf, PartialEq, Hash, Deserialize, Serialize)]
 pub struct PrimKeyCommonData {
     pub flags: PrimitiveFlags,
     pub aligned_aa_edges: EdgeMask,

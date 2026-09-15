@@ -16,7 +16,7 @@ use crate::frame_builder::FrameBuildingState;
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
-    PrimKey, PrimTemplate, PrimTemplateCommonData,
+    PrimTemplate, PrimTemplateCommonData,
     InternablePrimitive, PrimitiveStore,
 };
 use crate::prim_store::PrimitiveKind;
@@ -35,11 +35,10 @@ pub struct LineDecorationCacheKey {
     pub size: LayoutSizeAu,
 }
 
-// `LineDecoration` now lives in `webrender_api::interned_prims` so content-process
-// interning can hold it. Re-exported to keep existing references working.
-pub use api::interned_prims::LineDecoration;
-
-pub type LineDecorationKey = PrimKey<LineDecoration>;
+// `LineDecoration` and its key live in `webrender_api::interned_prims` so
+// content-process interning can hold them. Re-exported to keep existing
+// references working.
+pub use api::interned_prims::{LineDecoration, LineDecorationKey};
 
 impl intern::InternDebug for LineDecorationKey {}
 
