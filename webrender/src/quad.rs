@@ -724,10 +724,8 @@ fn prepare_quad_impl(
             Some(local_to_device) => local_to_device.map_rect(&local_bounds),
             // Not axis-aligned in device space, so there is no tight rect to
             // derive: bound the primitive's picture-space coverage rect.
-            None => frame_state.surfaces[pic_context.surface_index.0].map_to_device_rect(
-                &clip_chain.pic_coverage_rect,
-                spatial_tree,
-            ),
+            None => frame_state.surfaces[pic_context.surface_index.0]
+                .map_to_device_rect(&clip_chain.pic_coverage_rect),
         };
 
         // Only use AA edge instances if the drawn area is large enough to require it.

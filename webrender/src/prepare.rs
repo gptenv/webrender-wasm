@@ -885,10 +885,8 @@ fn prepare_prim_for_render(
                 && frame_state.resource_cache.texture_cache.allocated_color_bytes() < 10_000_000;
             if should_cache {
                 let surface = &frame_state.surfaces[pic_context.surface_index.0];
-                let clipped_surface_rect = surface.get_surface_rect(
-                    &prim_info.clip_chain.pic_coverage_rect,
-                    frame_context.spatial_tree,
-                );
+                let clipped_surface_rect = surface
+                    .get_surface_rect(&prim_info.clip_chain.pic_coverage_rect);
 
                 should_cache = if let Some(rect) = clipped_surface_rect {
                     rect.width() < 512 && rect.height() < 512
@@ -1028,10 +1026,8 @@ fn prepare_prim_for_render(
                 && frame_state.resource_cache.texture_cache.allocated_color_bytes() < 30_000_000;
             if should_cache {
                 let surface = &frame_state.surfaces[pic_context.surface_index.0];
-                let clipped_surface_rect = surface.get_surface_rect(
-                    &prim_info.clip_chain.pic_coverage_rect,
-                    frame_context.spatial_tree,
-                );
+                let clipped_surface_rect = surface
+                    .get_surface_rect(&prim_info.clip_chain.pic_coverage_rect);
 
                 should_cache = if let Some(rect) = clipped_surface_rect {
                     rect.width() < 4096 && rect.height() < 4096
@@ -1249,10 +1245,7 @@ fn prepare_prim_for_render(
             // The kinds that reach here (text runs, backdrop captures) have no
             // tighter footprint on hand than the primitive's coverage rect.
             let device_rect = frame_state.surfaces[pic_context.surface_index.0]
-                .map_to_device_rect(
-                    &prim_info.clip_chain.pic_coverage_rect,
-                    frame_context.spatial_tree,
-                );
+                .map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect);
 
             frame_state.push_prim(
                 &PrimitiveCommand::simple(draw_index, device_rect),
@@ -1326,10 +1319,9 @@ pub fn update_clip_task(
         // Get a minimal device space rect, clipped to the screen that we
         // need to allocate for the clip mask, as well as interpolated
         // snap offsets.
-        let unadjusted_device_rect = match frame_state.surfaces[pic_context.surface_index.0].get_surface_rect(
-            &scratch.frame.draw(draw_index).clip_chain.pic_coverage_rect,
-            frame_context.spatial_tree,
-        ) {
+        let unadjusted_device_rect = match frame_state.surfaces[pic_context.surface_index.0]
+            .get_surface_rect(&scratch.frame.draw(draw_index).clip_chain.pic_coverage_rect)
+        {
             Some(rect) => rect,
             None => return false,
         };

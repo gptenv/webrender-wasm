@@ -945,10 +945,7 @@ impl PictureInstance {
                     // rect. `context.surface_index` is the surface this block
                     // already resolves the plane's transform against.
                     let device_rect = frame_state.surfaces[context.surface_index.0]
-                        .map_to_device_rect(
-                            &draw.clip_chain.pic_coverage_rect,
-                            frame_context.spatial_tree,
-                        );
+                        .map_to_device_rect(&draw.clip_chain.pic_coverage_rect);
 
                     let prim_cmd = PrimitiveCommand::split_composite(
                         child.anchor.draw_index,
@@ -2498,10 +2495,7 @@ pub fn prepare_picture_clips(
             let device_pixel_scale = surface.device_pixel_scale;
             let raster_spatial_node_index = surface.raster_spatial_node_index;
 
-            let Some(clipped_surface_rect) = surface.get_surface_rect(
-                &coverage_rect,
-                frame_context.spatial_tree,
-            ) else {
+            let Some(clipped_surface_rect) = surface.get_surface_rect(&coverage_rect) else {
                 return None;
             };
 
@@ -2932,6 +2926,7 @@ fn test_large_surface_scale_1() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
         },
         SurfaceInfo {
             unclipped_local_rect: PictureRect::new(
@@ -2953,6 +2948,7 @@ fn test_large_surface_scale_1() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
         },
     ];
 
@@ -3034,6 +3030,7 @@ fn test_drop_filter_dirty_region_outside_prim() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
         },
@@ -3058,6 +3055,7 @@ fn test_drop_filter_dirty_region_outside_prim() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
         },
@@ -3154,6 +3152,7 @@ fn test_drop_filter_partial_dirty_content_inflate() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
         },
@@ -3178,6 +3177,7 @@ fn test_drop_filter_partial_dirty_content_inflate() {
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
+            picture_to_device: ScaleOffset::identity(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
         },

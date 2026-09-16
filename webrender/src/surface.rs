@@ -149,6 +149,57 @@ fn raster_to_root_mapper(
     )
 }
 
+/// The mapping from a surface's picture space into its device space, that is its
+/// raster space scaled by `device_pixel_scale`.
+///
+/// Always a 2D scale+offset, which is what makes a device rect and a picture
+/// rect describe the same region rather than one being a looser bound on the
+/// other, and what makes the mapping distribute over intersection.
+/// `PictureInstance::assign_surface` only lets the raster node differ from the
+/// surface node for a root-snapping surface, which requires the surface node to
+/// be in the root coordinate system - and a node there relates to the root by a
+/// scale+offset by construction. Otherwise the two nodes are the same and the
+/// mapping is the device scale alone.
+fn picture_to_device_mapping(
+    surface_spatial_node_index: SpatialNodeIndex,
+    raster_spatial_node_index: SpatialNodeIndex,
+    device_pixel_scale: DevicePixelScale,
+    spatial_tree: &SpatialTree,
+) -> ScaleOffset {
+    let picture_to_raster = if raster_spatial_node_index == surface_spatial_node_index {
+        ScaleOffset::identity()
+    } else {
+        debug_assert_eq!(
+            device_pixel_scale.0, 1.0,
+            "a surface that rasterizes in another node's space carries no device scale",
+        );
+        debug_assert_eq!(
+            raster_spatial_node_index,
+            spatial_tree.root_reference_frame_index(),
+            "the only raster node a surface does not share is the root",
+        );
+
+        match spatial_tree.get_relative_transform(
+            surface_spatial_node_index,
+            raster_spatial_node_index,
+        ) {
+            CoordinateSpaceMapping::Local => ScaleOffset::identity(),
+            CoordinateSpaceMapping::ScaleOffset(scale_offset) => scale_offset,
+            CoordinateSpaceMapping::Transform(..) => {
+                debug_assert!(
+                    false,
+                    "surface at {:?} rasterizing in {:?} is not axis-aligned in it",
+                    surface_spatial_node_index,
+                    raster_spatial_node_index,
+                );
+                ScaleOffset::identity()
+            }
+        }
+    };
+
+    picture_to_raster.then_scale(device_pixel_scale.0)
+}
+
 /// Maximum blur radius for blur filter
 const MAX_BLUR_RADIUS: f32 = 100.;
 
@@ -228,6 +279,11 @@ pub struct SurfaceInfo {
     /// Helper structs for mapping local rects in different
     /// coordinate systems into the picture coordinates.
     pub map_local_to_picture: SpaceMapper<LayoutPixel, PicturePixel>,
+    /// This surface's picture space to its device space. Fixed for the frame
+    /// once the surface is assigned, except that `get_surface_rects` recomputes
+    /// it when it has to scale a surface down to fit `max_surface_size`.
+    /// Prefer `map_to_device_rect` over using it directly.
+    pub picture_to_device: ScaleOffset,
     /// The positioning node for the surface itself,
     pub surface_spatial_node_index: SpatialNodeIndex,
     /// The rasterization root for this surface.
@@ -362,6 +418,12 @@ impl SurfaceInfo {
             is_opaque: false,
             clipping_rect: PictureRect::zero(),
             map_local_to_picture,
+            picture_to_device: picture_to_device_mapping(
+                surface_spatial_node_index,
+                raster_spatial_node_index,
+                device_pixel_scale,
+                spatial_tree,
+            ),
             raster_spatial_node_index,
             surface_spatial_node_index,
             device_pixel_scale,
@@ -485,31 +547,26 @@ impl SurfaceInfo {
         self.culling_rect = expanded.unwrap_or_else(RasterRect::max_rect);
     }
 
+    /// Re-derive `picture_to_device` after a change to `device_pixel_scale` or
+    /// `raster_spatial_node_index`.
+    pub fn update_picture_to_device_mapping(
+        &mut self,
+        spatial_tree: &SpatialTree,
+    ) {
+        self.picture_to_device = picture_to_device_mapping(
+            self.surface_spatial_node_index,
+            self.raster_spatial_node_index,
+            self.device_pixel_scale,
+            spatial_tree,
+        );
+    }
+
+    /// Map a rect in this surface's picture space into its device space.
     pub fn map_to_device_rect(
         &self,
         picture_rect: &PictureRect,
-        spatial_tree: &SpatialTree,
     ) -> DeviceRect {
-        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
-            // Currently, the surface's spatial node can be different from its raster node only
-            // for surfaces in the root coordinate system for snapping reasons.
-            // See `PictureInstance::assign_surface`.
-            assert_eq!(self.device_pixel_scale.0, 1.0);
-            assert_eq!(self.raster_spatial_node_index, spatial_tree.root_reference_frame_index());
-
-            let pic_to_raster = SpaceMapper::new_with_target(
-                self.raster_spatial_node_index,
-                self.surface_spatial_node_index,
-                WorldRect::max_rect(),
-                spatial_tree,
-            );
-
-            pic_to_raster.map(&picture_rect).unwrap()
-        } else {
-            picture_rect.cast_unit()
-        };
-
-        raster_rect * self.device_pixel_scale
+        self.picture_to_device.map_rect(picture_rect)
     }
 
     /// Clip and transform a local rect to a device rect suitable for allocating
@@ -517,35 +574,19 @@ impl SurfaceInfo {
     pub fn get_surface_rect(
         &self,
         local_rect: &PictureRect,
-        spatial_tree: &SpatialTree,
     ) -> Option<DeviceIntRect> {
         let local_rect = match local_rect.intersection(&self.clipping_rect) {
             Some(rect) => rect,
             None => return None,
         };
 
-        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
-            assert_eq!(self.device_pixel_scale.0, 1.0);
+        // The content should have been culled out earlier.
+        assert!(self.device_pixel_scale.0 > 0.0);
 
-            let local_to_world = SpaceMapper::new_with_target(
-                spatial_tree.root_reference_frame_index(),
-                self.surface_spatial_node_index,
-                WorldRect::max_rect(),
-                spatial_tree,
-            );
-
-            local_to_world.map(&local_rect).unwrap()
-        } else {
-            // The content should have been culled out earlier.
-            assert!(self.device_pixel_scale.0 > 0.0);
-
-            local_rect.cast_unit()
-        };
-
-        let surface_rect = (raster_rect * self.device_pixel_scale).round_out().to_i32();
+        let surface_rect = self.map_to_device_rect(&local_rect).round_out().to_i32();
         if surface_rect.is_empty() {
             // The local_rect computed above may have non-empty size that is very
-            // close to zero. Due to limited arithmetic precision, the SpaceMapper
+            // close to zero. Due to limited arithmetic precision, the mapping
             // might transform the near-zero-sized rect into a zero-sized one.
             return None;
         }
