@@ -10,6 +10,7 @@ use crate::clip::{ClipChainInstance, ClipIntern};
 use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
+use crate::quad_clip::QuadClipStack;
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent, to_cache_size};
 use crate::scene_building::{IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
@@ -43,6 +44,7 @@ impl NormalBorderData {
         &self,
         desc: &QuadDescriptor,
         clip_chain: &ClipChainInstance,
+        clips: &QuadClipStack,
         quad_transform: &mut QuadTransformState,
         frame_context: &FrameBuildingContext,
         pic_context: &PictureContext,
@@ -178,6 +180,7 @@ impl NormalBorderData {
                     },
                     &None,
                     clip_chain,
+                    clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -286,6 +289,7 @@ impl NormalBorderData {
                 spacing,
                 &None,
                 clip_chain,
+                clips,
                 quad_transform,
                 frame_context,
                 pic_context,

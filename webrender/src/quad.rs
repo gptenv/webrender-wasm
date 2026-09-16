@@ -20,6 +20,7 @@ use crate::intern::DataStore;
 use crate::internal_types::TextureSource;
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput};
 use crate::prim_store::{NinePatchDescriptor, PrimitiveScratchBuffer};
+use crate::quad_clip::{QuadClipShape, QuadClipStack};
 use crate::render_task::{RenderTask, RenderTaskAddress, RenderTaskKind};
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent};
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskGraphBuilder, RenderTaskId, SubTaskRange};
@@ -224,6 +225,7 @@ pub fn prepare_quad(
     desc: &QuadDescriptor,
     cache_key: &Option<QuadCacheKey>,
     clip_chain: &ClipChainInstance,
+    clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
     frame_context: &FrameBuildingContext,
@@ -253,9 +255,7 @@ pub fn prepare_quad(
         Some(_) => QuadRenderStrategy::Indirect,
         None => get_prim_render_strategy(
             transform.prim_spatial_node_index(),
-            clip_chain,
-            frame_state.clip_store,
-            interned_clips,
+            clips,
             transform.is_2d_scale_offset(),
             pattern_ctx.spatial_tree,
         ),
@@ -286,6 +286,7 @@ pub fn prepare_repeatable_quad(
     tile_spacing: LayoutSize,
     cache_key: &Option<QuadCacheKey>,
     clip_chain: &ClipChainInstance,
+    clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
     frame_context: &FrameBuildingContext,
@@ -319,9 +320,7 @@ pub fn prepare_repeatable_quad(
         Some(_) => QuadRenderStrategy::Indirect,
         None => get_prim_render_strategy(
             transform.prim_spatial_node_index(),
-            clip_chain,
-            frame_state.clip_store,
-            interned_clips,
+            clips,
             transform.is_2d_scale_offset(),
             pattern_ctx.spatial_tree,
         ),
@@ -523,6 +522,7 @@ pub fn prepare_border_nine_patch(
     desc: &QuadDescriptor,
     stretch_size: LayoutSize,
     clip_chain: &ClipChainInstance,
+    clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
     frame_context: &FrameBuildingContext,
@@ -550,9 +550,7 @@ pub fn prepare_border_nine_patch(
 
     let strategy = get_prim_render_strategy(
         transform.prim_spatial_node_index(),
-        clip_chain,
-        frame_state.clip_store,
-        interned_clips,
+        clips,
         transform.is_2d_scale_offset(),
         pattern_ctx.spatial_tree,
     );
@@ -1422,13 +1420,11 @@ fn prepare_tiles(
 
 fn get_prim_render_strategy(
     prim_spatial_node_index: SpatialNodeIndex,
-    clip_chain: &ClipChainInstance,
-    clip_store: &ClipStore,
-    interned_clips: &DataStore<ClipIntern>,
+    clips: &QuadClipStack,
     prim_is_scale_offset: bool,
     spatial_tree: &SpatialTree,
 ) -> QuadRenderStrategy {
-    if !clip_chain.needs_mask {
+    if !clips.needs_mask() {
         return QuadRenderStrategy::Direct
     }
 
@@ -1439,7 +1435,7 @@ fn get_prim_render_strategy(
     let try_split_prim = if prim_is_scale_offset {
         // TODO: we should compute this based on the (tightest possible)
         // rect in device space instead of a rect in picture space.
-        let size = clip_chain.pic_coverage_rect.size();
+        let size = clips.coverage_rect().size();
         size.width > MIN_QUAD_SPLIT_SIZE || size.height > MIN_QUAD_SPLIT_SIZE
     } else {
         false
@@ -1449,12 +1445,11 @@ fn get_prim_render_strategy(
         return QuadRenderStrategy::Indirect;
     }
 
-    if prim_is_scale_offset && clip_chain.clips_range.count == 1 {
-        let clip_instance = clip_store.get_instance_from_range(&clip_chain.clips_range, 0);
-        let clip_node = &interned_clips[clip_instance.handle];
+    if prim_is_scale_offset && clips.len() == 1 {
+        let clip = &clips.clips()[0];
 
-        if let ClipItemKind::RoundedRectangle { ref radius, ref inset, mode: ClipMode::Clip } = clip_node.item.kind {
-            let size = clip_instance.clip_rect.size();
+        if let QuadClipShape::RoundedRectangle { ref radius, ref inset, mode: ClipMode::Clip } = clip.shape {
+            let size = clip.rect.size();
             let radius = clamped_radius(radius, size);
             let max_corner_width = radius.top_left.width
                                         .max(radius.bottom_left.width)
@@ -1489,18 +1484,18 @@ fn get_prim_render_strategy(
 
                 let clip_prim_coords_match = spatial_tree.is_matching_coord_system(
                     prim_spatial_node_index,
-                    clip_instance.spatial_node_index,
+                    clip.spatial_node,
                 );
 
                 if clip_prim_coords_match {
                     let map_clip_to_prim = SpaceMapper::new_with_target(
                         prim_spatial_node_index,
-                        clip_instance.spatial_node_index,
+                        clip.spatial_node,
                         LayoutRect::max_rect(),
                         spatial_tree,
                     );
 
-                    if let Some(clip_rect) = map_clip_to_prim.map(&clip_instance.clip_rect) {
+                    if let Some(clip_rect) = map_clip_to_prim.map(&clip.rect) {
                         // The two spaces can be flipped with respect to one another,
                         // in which case the mapped vector has negative components.
                         // The nine-patch decomposition needs positive corner extents.
@@ -1564,12 +1559,11 @@ fn adjust_indirect_pattern_resolution(
 pub fn cache_key(
     prim_uid: ItemUid,
     transform: &QuadTransformState,
-    clip_chain: &ClipChainInstance,
-    clip_store: &ClipStore,
+    clips: &QuadClipStack,
 ) -> Option<QuadCacheKey> {
     const CACHE_MAX_CLIPS: usize = 3;
 
-    if (clip_chain.clips_range.count as usize) >= CACHE_MAX_CLIPS {
+    if clips.clips().len() >= CACHE_MAX_CLIPS {
         return None;
     }
 
@@ -1586,10 +1580,9 @@ pub fn cache_key(
 
     let mut clip_uids = [!0; CACHE_MAX_CLIPS];
 
-    for i in 0 .. clip_chain.clips_range.count {
-        let clip_instance = clip_store.get_instance_from_range(&clip_chain.clips_range, i);
-        clip_uids[i as usize] = clip_instance.handle.uid().get_uid();
-        if clip_instance.spatial_node_index != prim_spatial_node_index {
+    for (i, clip) in clips.clips().iter().enumerate() {
+        clip_uids[i] = clip.uid;
+        if clip.spatial_node != prim_spatial_node_index {
             return None;
         }
     }

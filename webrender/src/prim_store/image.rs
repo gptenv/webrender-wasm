@@ -11,6 +11,7 @@ use crate::clip::{ClipChainInstance, ClipIntern};
 use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{QuadDescriptor, QuadTransformState};
+use crate::quad_clip::QuadClipStack;
 use crate::scene_building::{IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::intern::{DataStore, Handle as InternHandle, InternDebug, Internable};
@@ -171,6 +172,7 @@ pub fn prepare_image_quads(
     common_data: &PrimTemplateCommonData,
     image_data: &ImageData,
     clip_chain: &ClipChainInstance,
+    clips: &QuadClipStack,
     quad_transform: &mut QuadTransformState,
     frame_context: &FrameBuildingContext,
     pic_context: &PictureContext,
@@ -297,6 +299,7 @@ pub fn prepare_image_quads(
                     },
                     &None,
                     clip_chain,
+                    clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -320,6 +323,7 @@ pub fn prepare_image_quads(
                 image_data.tile_spacing,
                 &None,
                 clip_chain,
+                clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -397,6 +401,7 @@ pub fn prepare_image_quads(
                         },
                         &None,
                         clip_chain,
+                        clips,
                         quad_transform,
                         frame_context,
                         pic_context,

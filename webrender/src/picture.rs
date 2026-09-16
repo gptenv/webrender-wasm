@@ -130,6 +130,7 @@ use crate::renderer::{BlendMode, GpuBufferAddress};
 use crate::resource_cache::ResourceCache;
 use crate::space::{SpaceMapper, SpaceSnapper};
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
+use crate::quad_clip::QuadClipStack;
 use crate::scene::SceneProperties;
 use crate::spatial_tree::CoordinateSystemId;
 use crate::surface::{SurfaceDescriptor, SurfaceTileDescriptor, get_surface_rects};
@@ -2725,6 +2726,14 @@ pub fn prepare_picture_primitive(
         }
     }
 
+    let mut composite_clips = QuadClipStack::new();
+    frame_state.clip_store.fill_quad_clips(
+        &mut composite_clips,
+        &composite_clip_chain,
+        &data_stores.clip,
+    );
+    let composite_clips = &composite_clips;
+
     let mut opacity = 1.0;
     // (filter_mode, amount-or-gpu-address) for CSS/SVG filters that map
     // to the ps_quad_blend shader.
@@ -2810,6 +2819,7 @@ pub fn prepare_picture_primitive(
                 },
                 &None,
                 &composite_clip_chain,
+                composite_clips,
                 transform,
                 frame_context,
                 pic_context,
@@ -2880,6 +2890,7 @@ pub fn prepare_picture_primitive(
         },
         &None,
         &composite_clip_chain,
+        composite_clips,
         transform,
         frame_context,
         pic_context,

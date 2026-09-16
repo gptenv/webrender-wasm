@@ -72,6 +72,7 @@ use crate::surface::{SubpixelMode, SurfaceIndex};
 use crate::tile_cache::{SliceId, TileCacheInstance};
 use crate::prim_store::*;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
+use crate::quad_clip::QuadClipStack;
 use crate::render_backend::DataStores;
 use crate::scene_debug::{HighlightMode, SceneDebugOverride};
 
@@ -164,6 +165,7 @@ fn prepare_primitives(
     let mut cmd_buffer_targets = Vec::new();
 
     let mut quad_transform = QuadTransformState::new();
+    let mut quad_clips = QuadClipStack::new();
 
     for cluster in &mut prim_list.clusters {
         if !cluster.flags.contains(ClusterFlags::IS_VISIBLE) {
@@ -209,6 +211,7 @@ fn prepare_primitives(
                     draw_index,
                     cluster,
                     &mut quad_transform,
+                    &mut quad_clips,
                     pic_context,
                     pic_state,
                     frame_context,
@@ -256,6 +259,7 @@ fn prepare_prim_for_render(
     draw_index: PrimitiveDrawIndex,
     cluster: &mut PrimitiveCluster,
     mut quad_transform: &mut QuadTransformState,
+    quad_clips: &mut QuadClipStack,
     pic_context: &PictureContext,
     pic_state: &mut PictureState,
     frame_context: &FrameBuildingContext,
@@ -280,6 +284,12 @@ fn prepare_prim_for_render(
                 return;
             }
 
+            frame_state.clip_store.fill_quad_clips(
+                quad_clips,
+                &prim_info.clip_chain,
+                &data_stores.clip,
+            );
+
             quad::prepare_quad(
                 &SceneDebugOverride::HIGHLIGHT_COLOR,
                 &QuadDescriptor {
@@ -290,6 +300,7 @@ fn prepare_prim_for_render(
                 },
                 &None,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -417,6 +428,12 @@ fn prepare_prim_for_render(
     // fields (state, clip_chain) aren't written by it.
     let prim_info = *scratch.frame.draw(draw_index);
 
+    frame_state.clip_store.fill_quad_clips(
+        quad_clips,
+        &prim_info.clip_chain,
+        &data_stores.clip,
+    );
+
     match &mut prim_instance.kind {
         PrimitiveKind::BoxShadow { data_handle, .. } => {
             tracy_rs::profile_scope!("BoxShadow");
@@ -428,6 +445,7 @@ fn prepare_prim_for_render(
                 &prim_data.common,
                 &prim_data.common.prim_rect,
                 &prim_info.clip_chain,
+                quad_clips,
                 &mut quad_transform,
                 frame_context,
                 pic_context,
@@ -473,6 +491,7 @@ fn prepare_prim_for_render(
                     LayoutSize::zero(),
                     &None,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -492,6 +511,7 @@ fn prepare_prim_for_render(
                     },
                     &None,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -588,6 +608,7 @@ fn prepare_prim_for_render(
                     transformed_aa_edges,
                 },
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -629,6 +650,7 @@ fn prepare_prim_for_render(
                     transformed_aa_edges,
                 },
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -657,6 +679,7 @@ fn prepare_prim_for_render(
                 },
                 &None,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -685,6 +708,7 @@ fn prepare_prim_for_render(
                     },
                     &None,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -721,6 +745,7 @@ fn prepare_prim_for_render(
                 },
                 &None,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -752,6 +777,7 @@ fn prepare_prim_for_render(
                     },
                     &None,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -769,6 +795,7 @@ fn prepare_prim_for_render(
                 common_data,
                 image_data,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -801,6 +828,7 @@ fn prepare_prim_for_render(
                     },
                     stretch_size,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -867,6 +895,7 @@ fn prepare_prim_for_render(
                             },
                             &None,
                             &prim_info.clip_chain,
+                            quad_clips,
                             quad_transform,
                             frame_context,
                             pic_context,
@@ -899,8 +928,7 @@ fn prepare_prim_for_render(
                 quad::cache_key(
                     data_handle.uid(),
                     quad_transform,
-                    &prim_info.clip_chain,
-                    frame_state.clip_store,
+                    quad_clips,
                 )
             } else {
                 None
@@ -919,6 +947,7 @@ fn prepare_prim_for_render(
                 prim_data.tile_spacing,
                 &cache_key,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -951,6 +980,7 @@ fn prepare_prim_for_render(
                     },
                     stretch_size,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -974,6 +1004,7 @@ fn prepare_prim_for_render(
                 prim_data.tile_spacing,
                 &None,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -1005,6 +1036,7 @@ fn prepare_prim_for_render(
                     },
                     stretch_size,
                     &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
                     frame_context,
                     pic_context,
@@ -1040,8 +1072,7 @@ fn prepare_prim_for_render(
                 quad::cache_key(
                     data_handle.uid(),
                     quad_transform,
-                    &prim_info.clip_chain,
-                    frame_state.clip_store,
+                    quad_clips,
                 )
             } else {
                 None
@@ -1060,6 +1091,7 @@ fn prepare_prim_for_render(
                 prim_data.tile_spacing,
                 &cache_key,
                 &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
                 pic_context,
@@ -1217,6 +1249,7 @@ fn prepare_prim_for_render(
                         },
                         &None,
                         &prim_info.clip_chain,
+                        quad_clips,
                         quad_transform,
                         frame_context,
                         pic_context,
