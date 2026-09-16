@@ -7,14 +7,14 @@ use api::{
 };
 use api::units::*;
 use euclid::point2;
-use crate::clip::{ClipChainInstance, ClipIntern};
+use crate::clip::ClipChainInstance;
 use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{QuadDescriptor, QuadTransformState};
 use crate::quad_clip::QuadClipStack;
 use crate::scene_building::{IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
-use crate::intern::{DataStore, Handle as InternHandle, InternDebug, Internable};
+use crate::intern::{Handle as InternHandle, InternDebug, Internable};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
     EdgeMask, InternablePrimitive, PrimTemplate, PrimTemplateCommonData, PrimitiveKind, PrimitiveScratchBuffer, PrimitiveStore
@@ -177,7 +177,6 @@ pub fn prepare_image_quads(
     frame_context: &FrameBuildingContext,
     pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
-    interned_clips: &DataStore<ClipIntern>,
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
 ) {
@@ -304,7 +303,6 @@ pub fn prepare_image_quads(
                     frame_context,
                     pic_context,
                     targets,
-                    interned_clips,
                     frame_state,
                     scratch,
                 );
@@ -328,7 +326,6 @@ pub fn prepare_image_quads(
                 frame_context,
                 pic_context,
                 targets,
-                interned_clips,
                 frame_state,
                 scratch,
             );
@@ -406,7 +403,6 @@ pub fn prepare_image_quads(
                         frame_context,
                         pic_context,
                         targets,
-                        interned_clips,
                         frame_state,
                         scratch,
                     );

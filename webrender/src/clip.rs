@@ -1401,38 +1401,49 @@ impl ClipStore {
         dest.clear();
 
         for instance in &self.clip_node_instances[range.to_range()] {
-            let uid = instance.handle.uid().get_uid();
+            self.push_quad_clip(dest, instance, interned_clips);
+        }
+    }
 
-            match interned_clips[instance.handle].item.kind {
-                ClipItemKind::Rectangle { mode } => {
-                    dest.push_rect(
-                        instance.clip_rect,
-                        mode,
-                        instance.spatial_node_index,
-                        uid,
-                    );
-                }
-                ClipItemKind::RoundedRectangle { radius, inset, mode } => {
-                    dest.push_rounded_rect(
-                        instance.clip_rect,
-                        radius,
-                        inset,
-                        mode,
-                        instance.spatial_node_index,
-                        uid,
-                    );
-                }
-                ClipItemKind::Image { .. } => {
-                    dest.push_mask(
-                        instance.clip_rect,
-                        instance.spatial_node_index,
-                        uid,
-                        self.visible_mask_tiles(instance).iter().map(|tile| QuadMaskTile {
-                            rect: tile.tile_rect,
-                            task_id: tile.task_id,
-                        }),
-                    );
-                }
+    /// Resolve a single clip node instance and append it to a `QuadClipStack`.
+    /// For the mask paths that pick out a subset of a clip chain.
+    pub fn push_quad_clip(
+        &self,
+        dest: &mut QuadClipStack,
+        instance: &ClipNodeInstance,
+        interned_clips: &ClipDataStore,
+    ) {
+        let uid = instance.handle.uid().get_uid();
+
+        match interned_clips[instance.handle].item.kind {
+            ClipItemKind::Rectangle { mode } => {
+                dest.push_rect(
+                    instance.clip_rect,
+                    mode,
+                    instance.spatial_node_index,
+                    uid,
+                );
+            }
+            ClipItemKind::RoundedRectangle { radius, inset, mode } => {
+                dest.push_rounded_rect(
+                    instance.clip_rect,
+                    radius,
+                    inset,
+                    mode,
+                    instance.spatial_node_index,
+                    uid,
+                );
+            }
+            ClipItemKind::Image { .. } => {
+                dest.push_mask(
+                    instance.clip_rect,
+                    instance.spatial_node_index,
+                    uid,
+                    self.visible_mask_tiles(instance).iter().map(|tile| QuadMaskTile {
+                        rect: tile.tile_rect,
+                        task_id: tile.task_id,
+                    }),
+                );
             }
         }
     }

@@ -106,7 +106,7 @@ use crate::pattern::mix_blend::{MixBlendPattern, FixedFunctionMixBlendPattern};
 use crate::pattern::filter::BlendFilterPattern;
 use crate::segment::EdgeMask;
 use api::ImageBufferKind;
-use crate::clip::{ClipChainInstance, ClipNodeId, ClipNodeFlags, ClipNodeRange};
+use crate::clip::{ClipChainInstance, ClipNodeId, ClipNodeFlags};
 use crate::spatial_tree::{SpatialTree, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace};
 use crate::composite::{tile_kind, CompositeTileSurface, CompositorKind, NativeTileId};
 use crate::composite::{CompositeTileDescriptor, CompositeTile};
@@ -2370,7 +2370,7 @@ pub fn prepare_picture_clips(
     prim_spatial_node_index: SpatialNodeIndex,
     data_stores: &DataStores,
     use_quads: bool,
-    composite_target_clip_range: &mut Option<ClipNodeRange>,
+    composite_target_clips: &mut QuadClipStack,
     pic_context: &PictureContext,
 ) -> Option<ClipTaskIndex> {
     // TODO(gw): Much of the code in this branch could be moved in to a common
@@ -2420,10 +2420,10 @@ pub fn prepare_picture_clips(
     // (a) Any masks in the same coord space as the surface
     // (b) All masks if the surface and parent are axis-aligned
     if !source_masks.is_empty() {
-        let first_clip_node_index = frame_state.clip_store.clip_node_instances.len() as u32;
         let parent_task_id = pic_scratch.primary_render_task_id.expect("bug: no composite mode");
 
-        // Construct a new clip node range, also add image-mask dependencies as needed
+        // Collect the source clips, also add image-mask dependencies as needed
+        let mut source_clips = QuadClipStack::new();
         for instance in source_masks {
             let clip_instance = frame_state.clip_store.get_instance_from_range(&clip_chain.clips_range, instance);
 
@@ -2434,13 +2434,12 @@ pub fn prepare_picture_clips(
                 );
             }
 
-            frame_state.clip_store.clip_node_instances.push(clip_instance.clone());
+            frame_state.clip_store.push_quad_clip(
+                &mut source_clips,
+                clip_instance,
+                &data_stores.clip,
+            );
         }
-
-        let clip_node_range = ClipNodeRange {
-            first: first_clip_node_index,
-            count: frame_state.clip_store.clip_node_instances.len() as u32 - first_clip_node_index,
-        };
 
         // Add the mask as a sub-pass of the picture
         let pic_task_id = pic_scratch.primary_render_task_id.expect("uh oh");
@@ -2454,15 +2453,13 @@ pub fn prepare_picture_clips(
         );
 
         quad::prepare_clip_range(
-            clip_node_range,
+            &source_clips,
             pic_task_id,
             &task_rect,
             &prim_local_rect,
             prim_spatial_node_index,
             info.raster_spatial_node_index,
             info.device_pixel_scale,
-            &data_stores.clip,
-            frame_state.clip_store,
             frame_context.spatial_tree,
             frame_state.rg_builder,
             &mut frame_state.frame_gpu_data.f32,
@@ -2475,22 +2472,18 @@ pub fn prepare_picture_clips(
     // occurs for masks in parent space when non-axis-aligned to the
     // source space.
     if !target_masks.is_empty() {
-        // Build a contiguous clip node range for the target masks.
-        let first_clip_node_index = frame_state.clip_store.clip_node_instances.len() as u32;
+        // The quad compositing path applies these clips directly (it
+        // renders/depends on any image-mask tiles itself); the legacy path
+        // draws them into a screen-space mask below.
+        let mut target_clips = QuadClipStack::new();
+        let dest = if use_quads { &mut *composite_target_clips } else { &mut target_clips };
+
         for instance in target_masks {
             let clip_instance = frame_state.clip_store.get_instance_from_range(&clip_chain.clips_range, instance);
-            frame_state.clip_store.clip_node_instances.push(clip_instance.clone());
+            frame_state.clip_store.push_quad_clip(dest, clip_instance, &data_stores.clip);
         }
-        let clip_node_range = ClipNodeRange {
-            first: first_clip_node_index,
-            count: frame_state.clip_store.clip_node_instances.len() as u32 - first_clip_node_index,
-        };
 
-        if use_quads {
-            // The quad compositing path applies these clips directly
-            // (it renders/depends on any image-mask tiles itself).
-            *composite_target_clip_range = Some(clip_node_range);
-        } else {
+        if !use_quads {
             // Legacy brush path: draw a screen-space alpha mask that is
             // sampled when compositing this picture.
             let surface = &frame_state.surfaces[pic_context.surface_index.0];
@@ -2517,9 +2510,8 @@ pub fn prepare_picture_clips(
             ));
 
             // Add image-mask tile dependencies to the mask task.
-            for i in 0 .. clip_node_range.count {
-                let clip_instance = frame_state.clip_store.get_instance_from_range(&clip_node_range, i);
-                for tile in frame_state.clip_store.visible_mask_tiles(clip_instance) {
+            for clip in target_clips.clips() {
+                for tile in target_clips.mask_tiles(clip) {
                     frame_state.rg_builder.add_dependency(
                         clip_task_id,
                         tile.task_id,
@@ -2530,15 +2522,13 @@ pub fn prepare_picture_clips(
             let task_rect = clipped_surface_rect.to_f32();
 
             quad::prepare_clip_range(
-                clip_node_range,
+                &target_clips,
                 clip_task_id,
                 &task_rect,
                 &prim_local_rect,
                 prim_spatial_node_index,
                 raster_spatial_node_index,
                 device_pixel_scale,
-                &data_stores.clip,
-                frame_state.clip_store,
                 frame_context.spatial_tree,
                 frame_state.rg_builder,
                 &mut frame_state.frame_gpu_data.f32,
@@ -2607,7 +2597,9 @@ pub fn prepare_picture_primitive(
     // the picture composites via the quad path, target masks are carried
     // here and applied by that path; otherwise the legacy brush path
     // renders a screen-space alpha mask task.
-    let mut composite_target_clip_range: Option<ClipNodeRange> = None;
+    // Clips applied while compositing the picture, rather than baked onto its
+    // source task. Left empty when the legacy brush path handles them.
+    let mut composite_clips = QuadClipStack::new();
 
     let mut clip_task_index = None;
 
@@ -2622,7 +2614,7 @@ pub fn prepare_picture_primitive(
             prim_spatial_node_index,
             data_stores,
             use_quads,
-            &mut composite_target_clip_range,
+            &mut composite_clips,
             pic_context,
         );
     }
@@ -2713,24 +2705,15 @@ pub fn prepare_picture_primitive(
     // Source clip masks (if any) were drawn onto the picture's
     // source task above, so the compositing quad must not
     // re-apply them (which would mask twice). Target clip masks
-    // are applied here by the quad path via their own clip
-    // range.
+    // are applied here by the quad path, and are the only clips
+    // `composite_clips` holds.
     let mut composite_clip_chain = prim_info.clip_chain;
-    match composite_target_clip_range {
-        Some(clips_range) => {
-            composite_clip_chain.needs_mask = true;
-            composite_clip_chain.clips_range = clips_range;
-        }
-        None => {
-            composite_clip_chain.needs_mask = false;
-        }
-    }
+    composite_clip_chain.needs_mask = !composite_clips.is_empty();
 
-    let mut composite_clips = QuadClipStack::new();
-    frame_state.clip_store.fill_quad_clips(
-        &mut composite_clips,
-        &composite_clip_chain,
-        &data_stores.clip,
+    composite_clips.set_bounds(
+        composite_clip_chain.local_clip_rect,
+        composite_clip_chain.pic_coverage_rect,
+        composite_clip_chain.needs_mask,
     );
     let composite_clips = &composite_clips;
 
@@ -2824,7 +2807,6 @@ pub fn prepare_picture_primitive(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -2895,7 +2877,6 @@ pub fn prepare_picture_primitive(
         frame_context,
         pic_context,
         targets,
-        &data_stores.clip,
         frame_state,
         scratch,
     );

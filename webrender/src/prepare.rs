@@ -305,7 +305,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -454,7 +453,6 @@ fn prepare_prim_for_render(
                 prim_spatial_node_index,
                 device_pixel_scale,
                 targets,
-                data_stores,
             );
 
             return;
@@ -496,7 +494,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -516,7 +513,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -613,7 +609,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -655,7 +650,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -684,7 +678,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -713,7 +706,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -750,7 +742,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -782,7 +773,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -800,7 +790,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -833,7 +822,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -900,7 +888,6 @@ fn prepare_prim_for_render(
                             frame_context,
                             pic_context,
                             targets,
-                            &data_stores.clip,
                             frame_state,
                             scratch,
                         );
@@ -952,7 +939,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -985,7 +971,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -1009,7 +994,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -1041,7 +1025,6 @@ fn prepare_prim_for_render(
                     frame_context,
                     pic_context,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -1096,7 +1079,6 @@ fn prepare_prim_for_render(
                 frame_context,
                 pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -1254,7 +1236,6 @@ fn prepare_prim_for_render(
                         frame_context,
                         pic_context,
                         targets,
-                        &data_stores.clip,
                         frame_state,
                         scratch,
                     );
@@ -1316,16 +1297,21 @@ fn add_clip_mask_render_task(
 
     let task_rect = device_rect.to_f32();
 
-    quad::prepare_clip_range(
+    let mut clips = QuadClipStack::new();
+    frame_state.clip_store.fill_quad_clips_from_range(
+        &mut clips,
         clip_node_range,
+        &data_stores.clip,
+    );
+
+    quad::prepare_clip_range(
+        &clips,
         clip_task_id,
         &task_rect,
         &prim_local_rect,
         prim_spatial_node_index,
         raster_spatial_node_index,
         device_pixel_scale,
-        &data_stores.clip,
-        frame_state.clip_store,
         frame_context.spatial_tree,
         frame_state.rg_builder,
         &mut frame_state.frame_gpu_data.f32,

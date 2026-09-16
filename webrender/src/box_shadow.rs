@@ -14,7 +14,6 @@ use crate::quad::{self, QuadDescriptor, QuadTransformState};
 use crate::quad_clip::QuadClipStack;
 use crate::pattern::box_shadow::BoxShadowPatternData;
 use crate::render_task::{RenderTask, RenderTaskKind, MAX_BLUR_STD_DEVIATION};
-use crate::render_backend::DataStores;
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent, to_cache_size};
 use crate::render_target::RenderTargetKind;
 use crate::gpu_types::BlurEdgeMode;
@@ -179,7 +178,6 @@ pub fn prepare_box_shadow(
     prim_spatial_node_index: SpatialNodeIndex,
     device_pixel_scale: DevicePixelScale,
     cmd_buffer_targets: &[CommandBufferIndex],
-    data_stores: &DataStores,
 ) {
     let blur_radius = shadow_data.blur_radius;
     // Build snapped element/inner/outer rects. The shader expects
@@ -466,7 +464,6 @@ pub fn prepare_box_shadow(
         frame_context,
         pic_context,
         cmd_buffer_targets,
-        &data_stores.clip,
         frame_state,
         scratch,
     );

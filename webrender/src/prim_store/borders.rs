@@ -6,7 +6,7 @@ use api::{ColorF, NormalBorder, RepeatMode};
 use api::units::*;
 use smallvec::SmallVec;
 use crate::border::{build_border_instances, NormalBorderSegment, MAX_BORDER_RESOLUTION};
-use crate::clip::{ClipChainInstance, ClipIntern};
+use crate::clip::ClipChainInstance;
 use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
@@ -14,7 +14,7 @@ use crate::quad_clip::QuadClipStack;
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent, to_cache_size};
 use crate::scene_building::{IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
-use crate::intern::{self, DataStore};
+use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
     InternablePrimitive, NinePatchDescriptor, PrimTemplate, PrimTemplateCommonData, PrimitiveKind, PrimitiveScratchBuffer, PrimitiveStore
@@ -49,7 +49,6 @@ impl NormalBorderData {
         frame_context: &FrameBuildingContext,
         pic_context: &PictureContext,
         targets: &[CommandBufferIndex],
-        interned_clips: &DataStore<ClipIntern>,
         frame_state: &mut FrameBuildingState,
         scratch: &mut PrimitiveScratchBuffer,
     ) {
@@ -185,7 +184,6 @@ impl NormalBorderData {
                     frame_context,
                     pic_context,
                     targets,
-                    interned_clips,
                     frame_state,
                     scratch,
                 );
@@ -294,7 +292,6 @@ impl NormalBorderData {
                 frame_context,
                 pic_context,
                 targets,
-                interned_clips,
                 frame_state,
                 scratch,
             );
