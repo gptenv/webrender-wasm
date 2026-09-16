@@ -937,10 +937,16 @@ pub enum DisplayListSection {
 ///
 /// Hence `AuOffset`: accumulated offsets are carried as whole app units and added
 /// to app-unit coordinates, never as f32 layout pixels. See bug 2059570.
+///
+/// Held as i64 rather than nscoord's i32: a single sticky frame's unconstrained
+/// sticky range edge is `nscoord_MIN / 2` app units, and nesting sticky frames
+/// accumulates that with one sign, so four levels exceed i32 (bug 2072044).
+/// Accumulated offsets that large are far past `MAX_EXACT_AU` and so carry no
+/// exactness to preserve; they only have to not overflow.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 struct AuOffset {
-    x: i32,
-    y: i32,
+    x: i64,
+    y: i64,
 }
 
 impl AuOffset {
@@ -1020,7 +1026,7 @@ impl AuGrid {
     /// that is off-grid on an axis that *is* shifted is still rounded, and
     /// `off_grid_coords` counts it; embedders that intern the rect must keep
     /// that counter at zero.
-    fn add(&self, v: f32, off_au: i32, off_grid: &mut u32) -> f32 {
+    fn add(&self, v: f32, off_au: i64, off_grid: &mut u32) -> f32 {
         if off_au == 0 {
             return v;
         }
@@ -1041,8 +1047,8 @@ impl AuGrid {
     /// Convert a vector Gecko supplied (a scroll offset) to whole app units.
     fn vec_to_au(&self, v: LayoutVector2D, off_grid: &mut u32) -> AuOffset {
         AuOffset {
-            x: self.to_au(v.x, off_grid) as i32,
-            y: self.to_au(v.y, off_grid) as i32,
+            x: self.to_au(v.x, off_grid) as i64,
+            y: self.to_au(v.y, off_grid) as i64,
         }
     }
 }
