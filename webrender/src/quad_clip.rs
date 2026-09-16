@@ -72,7 +72,7 @@ pub struct QuadClipStack {
     clips: Vec<QuadClip>,
     mask_tiles: Vec<QuadMaskTile>,
     local_clip_rect: LayoutRect,
-    coverage_rect: PictureRect,
+    coverage_rect: DeviceRect,
     needs_mask: bool,
 }
 
@@ -82,7 +82,7 @@ impl QuadClipStack {
             clips: Vec::new(),
             mask_tiles: Vec::new(),
             local_clip_rect: LayoutRect::max_rect(),
-            coverage_rect: PictureRect::zero(),
+            coverage_rect: DeviceRect::zero(),
             needs_mask: false,
         }
     }
@@ -126,8 +126,9 @@ impl QuadClipStack {
         self.local_clip_rect
     }
 
-    /// The primitive's clipped coverage rect, in the surface's picture space.
-    pub fn coverage_rect(&self) -> PictureRect {
+    /// The primitive's clipped coverage rect, in the device space of the surface
+    /// it is drawn into. Not intersected with that surface's clipping rect.
+    pub fn coverage_rect(&self) -> DeviceRect {
         self.coverage_rect
     }
 
@@ -135,14 +136,14 @@ impl QuadClipStack {
         self.clips.clear();
         self.mask_tiles.clear();
         self.local_clip_rect = LayoutRect::max_rect();
-        self.coverage_rect = PictureRect::zero();
+        self.coverage_rect = DeviceRect::zero();
         self.needs_mask = false;
     }
 
     pub fn set_bounds(
         &mut self,
         local_clip_rect: LayoutRect,
-        coverage_rect: PictureRect,
+        coverage_rect: DeviceRect,
         needs_mask: bool,
     ) {
         self.local_clip_rect = local_clip_rect;

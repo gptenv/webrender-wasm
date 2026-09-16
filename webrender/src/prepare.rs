@@ -284,9 +284,12 @@ fn prepare_prim_for_render(
                 return;
             }
 
+            let device_coverage_rect = frame_state.surfaces[pic_context.surface_index.0]
+                .map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect);
             frame_state.clip_store.fill_quad_clips(
                 quad_clips,
                 &prim_info.clip_chain,
+                device_coverage_rect,
                 &data_stores.clip,
             );
 
@@ -426,9 +429,14 @@ fn prepare_prim_for_render(
     // fields (state, clip_chain) aren't written by it.
     let prim_info = *scratch.frame.draw(draw_index);
 
+    // Mapped through the surface this primitive is drawn into, which is the
+    // space every quad render task and scissor rect below lives in.
+    let device_coverage_rect = frame_state.surfaces[pic_context.surface_index.0]
+        .map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect);
     frame_state.clip_store.fill_quad_clips(
         quad_clips,
         &prim_info.clip_chain,
+        device_coverage_rect,
         &data_stores.clip,
     );
 

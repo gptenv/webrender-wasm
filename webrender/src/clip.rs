@@ -1374,17 +1374,23 @@ impl ClipStore {
 
     /// Resolve a clip chain instance into a `QuadClipStack`, which the quad path
     /// consumes without reaching back into the clip store or the interner.
+    ///
+    /// `device_coverage_rect` is `clip_chain.pic_coverage_rect` mapped through
+    /// the surface the primitive is drawn into. The caller maps it because the
+    /// clip store has no way to pick that surface: it is the destination
+    /// surface, not the one the primitive's own picture belongs to.
     pub fn fill_quad_clips(
         &self,
         dest: &mut QuadClipStack,
         clip_chain: &ClipChainInstance,
+        device_coverage_rect: DeviceRect,
         interned_clips: &ClipDataStore,
     ) {
         self.fill_quad_clips_from_range(dest, clip_chain.clips_range, interned_clips);
 
         dest.set_bounds(
             clip_chain.local_clip_rect,
-            clip_chain.pic_coverage_rect,
+            device_coverage_rect,
             clip_chain.needs_mask,
         );
     }

@@ -706,9 +706,8 @@ fn prepare_quad_impl(
             // primitive's.
             Some(local_to_device) => local_to_device.map_rect(&local_bounds),
             // Not axis-aligned in device space, so there is no tight rect to
-            // derive: bound the primitive's picture-space coverage rect.
-            None => frame_state.surfaces[pic_context.surface_index.0]
-                .map_to_device_rect(&clips.coverage_rect()),
+            // derive: bound the primitive's whole coverage rect.
+            None => clips.coverage_rect(),
         };
 
         // Only use AA edge instances if the drawn area is large enough to require it.
@@ -754,8 +753,7 @@ fn prepare_quad_impl(
 
     // Rounding is important here because clipped_surface_rect.min may be used as the origin
     // of render tasks. Fractional values would introduce fractional offsets in the render tasks.
-    let mut clipped_surface_rect = surface
-        .map_to_device_rect(&clips.coverage_rect())
+    let mut clipped_surface_rect = clips.coverage_rect()
         .intersection_unchecked(&surface.clipping_rect)
         .round();
 
@@ -1406,8 +1404,8 @@ fn get_prim_render_strategy(
     // tiling path works with non-axis-aligned primitives but less efficiently than
     // the indirect path since all tiles end up treated as masks.
     let try_split_prim = if prim_is_scale_offset {
-        // TODO: we should compute this based on the (tightest possible)
-        // rect in device space instead of a rect in picture space.
+        // TODO: the coverage rect bounds the whole primitive. A tighter rect
+        // would split fewer primitives that only need it in part.
         let size = clips.coverage_rect().size();
         size.width > MIN_QUAD_SPLIT_SIZE || size.height > MIN_QUAD_SPLIT_SIZE
     } else {
