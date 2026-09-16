@@ -212,6 +212,13 @@ pub fn prepare_image_quads(
     }
 
 
+    if let Some(&snapshot_task_id) = frame_state.image_dependencies.get(&request.key) {
+        frame_state.surface_builder.add_child_render_task(
+            snapshot_task_id,
+            frame_state.rg_builder,
+        );
+    }
+
     match image_properties.tiling {
         // Non-tiled (most common) path.
         None => {
