@@ -637,7 +637,7 @@ pub fn update_prim_visibility(
 /// is the fallback if the primitive's transform cannot be inverted.
 pub fn compute_surface_visible_rect(
     surface: &SurfaceInfo,
-    clip_chain: &ClipChainInstance,
+    pic_coverage_rect: PictureRect,
     prim_spatial_node_index: SpatialNodeIndex,
     bounds: &LayoutRect,
     spatial_tree: &SpatialTree,
@@ -650,7 +650,7 @@ pub fn compute_surface_visible_rect(
     );
 
     surface.clipping_rect_in_picture_space()
-        .intersection(&clip_chain.pic_coverage_rect)
+        .intersection(&pic_coverage_rect)
         .and_then(|rect| map_prim_to_surface.unmap(&rect))
         .unwrap_or(*bounds)
         .intersection_unchecked(bounds)

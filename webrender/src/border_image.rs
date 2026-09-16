@@ -6,7 +6,6 @@ use euclid::point2;
 use api::{ColorF, ImageBufferKind, RepeatMode};
 use api::units::*;
 use crate::border::compute_border_repetition_1d;
-use crate::clip::ClipChainInstance;
 use crate::command_buffer::CommandBufferIndex;
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::pattern::{PatternBuilder, PatternBuilderContext, PatternBuilderState};
@@ -22,7 +21,6 @@ pub fn prepare_border_image_nine_patch(
     src_image: &ImagePattern,
     src_image_size: DeviceIntSize,
     desc: &QuadDescriptor,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
@@ -80,7 +78,6 @@ pub fn prepare_border_image_nine_patch(
             stretch_size,
             spacing,
             &None,
-            clip_chain,
             clips,
             transform,
             frame_context,

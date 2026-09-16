@@ -2556,7 +2556,6 @@ pub fn prepare_picture_primitive(
     pic: &PictureInstance,
     raster_config: &RasterConfig,
     prim_spatial_node_index: SpatialNodeIndex,
-    _clip_chain: &ClipChainInstance,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
@@ -2707,13 +2706,11 @@ pub fn prepare_picture_primitive(
     // re-apply them (which would mask twice). Target clip masks
     // are applied here by the quad path, and are the only clips
     // `composite_clips` holds.
-    let mut composite_clip_chain = prim_info.clip_chain;
-    composite_clip_chain.needs_mask = !composite_clips.is_empty();
-
+    let needs_mask = !composite_clips.is_empty();
     composite_clips.set_bounds(
-        composite_clip_chain.local_clip_rect,
-        composite_clip_chain.pic_coverage_rect,
-        composite_clip_chain.needs_mask,
+        prim_info.clip_chain.local_clip_rect,
+        prim_info.clip_chain.pic_coverage_rect,
+        needs_mask,
     );
     let composite_clips = &composite_clips;
 
@@ -2801,7 +2798,6 @@ pub fn prepare_picture_primitive(
                     transformed_aa_edges: EdgeMask::all(),
                 },
                 &None,
-                &composite_clip_chain,
                 composite_clips,
                 transform,
                 frame_context,
@@ -2871,7 +2867,6 @@ pub fn prepare_picture_primitive(
             transformed_aa_edges: EdgeMask::all(),
         },
         &None,
-        &composite_clip_chain,
         composite_clips,
         transform,
         frame_context,

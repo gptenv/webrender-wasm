@@ -5,7 +5,7 @@ use api::{BorderRadius, BoxShadowClipMode, ClipMode, ColorF};
 use api::units::*;
 use crate::border;
 use crate::command_buffer::CommandBufferIndex;
-use crate::clip::{ClipChainInstance, ClipNodeId};
+use crate::clip::ClipNodeId;
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::intern::{Handle as InternHandle, InternDebug, Internable};
 use crate::prim_store::{InternablePrimitive, PrimTemplate, PrimTemplateCommonData, PrimitiveScratchBuffer};
@@ -168,7 +168,6 @@ pub fn prepare_box_shadow(
     shadow_data: &BoxShadowData,
     common_data: &PrimTemplateCommonData,
     unsnapped_pattern_rect: &LayoutRect,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
     quad_transform: &mut QuadTransformState,
     frame_context: &FrameBuildingContext,
@@ -452,13 +451,12 @@ pub fn prepare_box_shadow(
             pattern_rect: prim_rect,
             // `prim_rect` is re-derived here by snapping the element rect and
             // re-inflating, so it differs from the prim rect the clip chain was
-            // built with; `clip_chain.local_coverage_rect` does not apply.
-            bounds: clip_chain.local_clip_rect.intersection_unchecked(&prim_rect),
+            // built with, so the clip chain's own coverage rect does not apply.
+            bounds: clips.local_clip_rect().intersection_unchecked(&prim_rect),
             aligned_aa_edges: common_data.aligned_aa_edges,
             transformed_aa_edges: common_data.transformed_aa_edges,
         },
         &None,
-        clip_chain,
         clips,
         quad_transform,
         frame_context,

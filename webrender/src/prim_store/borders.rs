@@ -6,7 +6,6 @@ use api::{ColorF, NormalBorder, RepeatMode};
 use api::units::*;
 use smallvec::SmallVec;
 use crate::border::{build_border_instances, NormalBorderSegment, MAX_BORDER_RESOLUTION};
-use crate::clip::ClipChainInstance;
 use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
@@ -43,7 +42,6 @@ impl NormalBorderData {
     pub fn update(
         &self,
         desc: &QuadDescriptor,
-        clip_chain: &ClipChainInstance,
         clips: &QuadClipStack,
         quad_transform: &mut QuadTransformState,
         frame_context: &FrameBuildingContext,
@@ -178,7 +176,6 @@ impl NormalBorderData {
                         transformed_aa_edges: desc.transformed_aa_edges & segment.edge_flags,
                     },
                     &None,
-                    clip_chain,
                     clips,
                     quad_transform,
                     frame_context,
@@ -286,7 +283,6 @@ impl NormalBorderData {
                 stretch_size,
                 spacing,
                 &None,
-                clip_chain,
                 clips,
                 quad_transform,
                 frame_context,

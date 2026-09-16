@@ -12,7 +12,7 @@ use crate::pattern::repeat::RepeatedPattern;
 use crate::render_task::{ImageClipSubTask, RectangleClipSubTask, SubTask};
 use crate::transform::TransformPalette;
 use crate::batch::{BatchKey, BatchKind, BatchTextures};
-use crate::clip::{clamped_radius, ClipChainInstance};
+use crate::clip::clamped_radius;
 use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand, QuadFlags};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::gpu_types::{PrimitiveInstanceData, QuadHeader, QuadInstance, QuadPrimitive, QuadSegment, ZBufferId};
@@ -223,7 +223,6 @@ pub fn prepare_quad(
     pattern_builder: &dyn PatternBuilder,
     desc: &QuadDescriptor,
     cache_key: &Option<QuadCacheKey>,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
@@ -264,7 +263,6 @@ pub fn prepare_quad(
         &pattern,
         desc,
         cache_key,
-        clip_chain,
         clips,
 
         transform,
@@ -283,7 +281,6 @@ pub fn prepare_repeatable_quad(
     stretch_size: LayoutSize,
     tile_spacing: LayoutSize,
     cache_key: &Option<QuadCacheKey>,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
@@ -348,7 +345,6 @@ pub fn prepare_repeatable_quad(
             &pattern,
             &stretched_desc,
             &cache_key,
-            clip_chain,
             clips,
             transform,
             frame_context.spatial_tree,
@@ -443,7 +439,6 @@ pub fn prepare_repeatable_quad(
             &repeat_pattern,
             desc,
             &None,
-            clip_chain,
             clips,
             transform,
             frame_context.spatial_tree,
@@ -460,7 +455,7 @@ pub fn prepare_repeatable_quad(
 
     let visible_rect = compute_surface_visible_rect(
         &frame_state.surfaces[pic_context.surface_index.0],
-        clip_chain,
+        clips.coverage_rect(),
         transform.prim_spatial_node_index(),
         &desc.bounds,
         frame_context.spatial_tree,
@@ -500,7 +495,6 @@ pub fn prepare_repeatable_quad(
             // Bug 2017832 - Caching breaks manually repeated patterns
             // with SWGL for some reason.
             &None,
-            clip_chain,
             clips,
             transform,
             frame_context.spatial_tree,
@@ -517,7 +511,6 @@ pub fn prepare_border_nine_patch(
     pattern_builder: &dyn PatternBuilder,
     desc: &QuadDescriptor,
     stretch_size: LayoutSize,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
@@ -620,7 +613,6 @@ pub fn prepare_border_nine_patch(
                 transformed_aa_edges: desc.transformed_aa_edges & side,
             },
             &None,
-            clip_chain,
             clips,
 
             transform,
@@ -639,7 +631,6 @@ fn prepare_quad_impl(
     pattern: &Pattern,
     desc: &QuadDescriptor,
     cache_key: &Option<QuadCacheKey>,
-    clip_chain: &ClipChainInstance,
     clips: &QuadClipStack,
 
     transform: &mut QuadTransformState,
@@ -683,7 +674,7 @@ fn prepare_quad_impl(
     };
 
     let local_bounds = desc.bounds
-        .intersection_unchecked(&clip_chain.local_clip_rect);
+        .intersection_unchecked(&clips.local_clip_rect());
     let local_pattern_rect = desc.pattern_rect;
 
     // We round the coordinates of non-antialiased edges of the primitive.
@@ -717,7 +708,7 @@ fn prepare_quad_impl(
             // Not axis-aligned in device space, so there is no tight rect to
             // derive: bound the primitive's picture-space coverage rect.
             None => frame_state.surfaces[pic_context.surface_index.0]
-                .map_to_device_rect(&clip_chain.pic_coverage_rect),
+                .map_to_device_rect(&clips.coverage_rect()),
         };
 
         // Only use AA edge instances if the drawn area is large enough to require it.
@@ -764,7 +755,7 @@ fn prepare_quad_impl(
     // Rounding is important here because clipped_surface_rect.min may be used as the origin
     // of render tasks. Fractional values would introduce fractional offsets in the render tasks.
     let mut clipped_surface_rect = surface
-        .map_to_device_rect(&clip_chain.pic_coverage_rect)
+        .map_to_device_rect(&clips.coverage_rect())
         .intersection_unchecked(&surface.clipping_rect)
         .round();
 
