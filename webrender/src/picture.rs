@@ -836,7 +836,7 @@ impl PictureInstance {
                 frame_state.surface_builder.push_surface(
                     raster_config.surface_index,
                     is_sub_graph,
-                    surface_rects.clipped_local,
+                    surface_rects.clipped_notsnapped,
                     Some(surface_descriptor),
                     frame_state.surfaces,
                     frame_state.rg_builder,
@@ -1671,7 +1671,7 @@ fn prepare_tiled_picture_surface(
     let tile_cache = tile_caches.get_mut(&slice_id).unwrap();
     let mut debug_info = SliceDebugInfo::new();
     let mut surface_render_tasks = FastHashMap::default();
-    let mut surface_local_dirty_rect = PictureRect::zero();
+    let mut surface_device_dirty_rect = DeviceRect::zero();
     let device_pixel_scale = frame_state
         .surfaces[surface_index.0]
         .device_pixel_scale;
@@ -1839,7 +1839,10 @@ fn prepare_tiled_picture_surface(
                 .intersection(&tile.cached_surface.current_descriptor.local_valid_rect)
                 .unwrap_or_else(|| { tile.cached_surface.is_valid = true; PictureRect::zero() });
 
-            surface_local_dirty_rect = surface_local_dirty_rect.union(&tile.cached_surface.local_dirty_rect);
+            surface_device_dirty_rect = surface_device_dirty_rect.union(
+                &frame_state.surfaces[surface_index.0]
+                    .map_to_device_rect(&tile.cached_surface.local_dirty_rect),
+            );
 
             // Update the device dirty rect
             let device_dirty_rect = map_pic_to_device
@@ -2282,7 +2285,7 @@ fn prepare_tiled_picture_surface(
     frame_state.surface_builder.push_surface(
         surface_index,
         false,
-        surface_local_dirty_rect,
+        surface_device_dirty_rect,
         Some(descriptor),
         frame_state.surfaces,
         frame_state.rg_builder,
@@ -2913,7 +2916,7 @@ fn test_large_surface_scale_1() {
             unclipped_local_rect: PictureRect::max_rect(),
             clipped_local_rect: PictureRect::max_rect(),
             is_opaque: true,
-            clipping_rect: PictureRect::max_rect(),
+            clipping_rect: DeviceRect::max_rect(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
             map_local_to_picture: map_local_to_picture.clone(),
@@ -2935,7 +2938,7 @@ fn test_large_surface_scale_1() {
             ),
             clipped_local_rect: PictureRect::max_rect(),
             is_opaque: true,
-            clipping_rect: PictureRect::max_rect(),
+            clipping_rect: DeviceRect::max_rect(),
             culling_rect: RasterRect::max_rect(),
             culling_rect_projection_failed: false,
             map_local_to_picture,
@@ -3019,7 +3022,7 @@ fn test_drop_filter_dirty_region_outside_prim() {
             unclipped_local_rect: PictureRect::max_rect(),
             clipped_local_rect: PictureRect::max_rect(),
             is_opaque: true,
-            clipping_rect: PictureRect::max_rect(),
+            clipping_rect: DeviceRect::max_rect(),
             map_local_to_picture: map_local_to_picture.clone(),
             raster_spatial_node_index: root_reference_frame_index,
             surface_spatial_node_index: root_reference_frame_index,
@@ -3044,7 +3047,7 @@ fn test_drop_filter_dirty_region_outside_prim() {
                 PicturePoint::new(750.0, 450.0),
             ),
             is_opaque: true,
-            clipping_rect: PictureRect::max_rect(),
+            clipping_rect: DeviceRect::max_rect(),
             map_local_to_picture,
             raster_spatial_node_index: root_reference_frame_index,
             surface_spatial_node_index: root_reference_frame_index,
@@ -3084,9 +3087,9 @@ fn test_drop_filter_dirty_region_outside_prim() {
     assert_eq!(info.task_size, DeviceIntSize::new(1200, 900));
 
     // Ensure we get a valid and correct render task size when dirty region is outside filter content
-    surfaces[0].clipping_rect = PictureRect::new(
-        PicturePoint::new(768.0, 128.0),
-        PicturePoint::new(1024.0, 256.0),
+    surfaces[0].clipping_rect = DeviceRect::new(
+        DevicePoint::new(768.0, 128.0),
+        DevicePoint::new(1024.0, 256.0),
     );
     let info = get_surface_rects(
         SurfaceIndex(1),
@@ -3138,9 +3141,9 @@ fn test_drop_filter_partial_dirty_content_inflate() {
             // the image but stops short of the full picture extent. This is
             // the scenario where the bug used to leave the texture's right
             // and bottom edges on image content.
-            clipping_rect: PictureRect::new(
-                PicturePoint::new(0.0, 0.0),
-                PicturePoint::new(683.0, 341.0),
+            clipping_rect: DeviceRect::new(
+                DevicePoint::new(0.0, 0.0),
+                DevicePoint::new(683.0, 341.0),
             ),
             map_local_to_picture: map_local_to_picture.clone(),
             raster_spatial_node_index: root_reference_frame_index,
@@ -3166,7 +3169,7 @@ fn test_drop_filter_partial_dirty_content_inflate() {
                 PicturePoint::new(500.0, 500.0),
             ),
             is_opaque: true,
-            clipping_rect: PictureRect::max_rect(),
+            clipping_rect: DeviceRect::max_rect(),
             map_local_to_picture,
             raster_spatial_node_index: root_reference_frame_index,
             surface_spatial_node_index: root_reference_frame_index,

@@ -499,7 +499,7 @@ pub fn prepare_composite_mode(
             let map_pic_to_parent = SpaceMapper::new_with_target(
                 parent_surface.surface_spatial_node_index,
                 surface_spatial_node_index,
-                parent_surface.clipping_rect,
+                parent_surface.clipping_rect_in_picture_space(),
                 frame_context.spatial_tree,
             );
             let pic_rect = surface.clipped_local_rect;
@@ -507,16 +507,11 @@ pub fn prepare_composite_mode(
                 .map(&pic_rect)
                 .expect("bug: unable to map mix-blend content into parent");
 
-            let backdrop_rect = pic_in_raster_space;
-            let parent_surface_rect = parent_surface.clipping_rect;
+            let backdrop_rect = parent_surface.map_to_device_rect(&pic_in_raster_space);
 
-            let readback_task_id = match backdrop_rect.intersection(&parent_surface_rect) {
+            let readback_task_id = match backdrop_rect.intersection(&parent_surface.clipping_rect) {
                 Some(available_rect) => {
-                    let backdrop_rect = parent_surface.map_to_device_rect(&backdrop_rect);
-
-                    let available_rect = parent_surface
-                        .map_to_device_rect(&available_rect)
-                        .round_out();
+                    let available_rect = available_rect.round_out();
 
                     let backdrop_uv = calculate_uv_rect_kind(
                         available_rect,
@@ -916,7 +911,10 @@ pub struct SurfaceAllocInfo {
     // Only used for SVGFEGraph currently, this is the source pixels needed to
     // render the pixels in clipped.
     pub source: DeviceRect,
-    // Only used for SVGFEGraph, this is the same as clipped before rounding.
+    // `clipped` before rounding, i.e. the exact device-space image of
+    // `clipped_local`. This is the rect to use where the surface's local ->
+    // device mapping matters rather than the allocated size, which is why it is
+    // what `SurfaceInfo::clipping_rect` is set from.
     pub clipped_notsnapped: DeviceRect,
     pub clipped_local: PictureRect,
     pub uv_rect_kind: UvRectKind,
@@ -960,15 +958,17 @@ pub fn get_surface_rects(
 ) -> Option<SurfaceAllocInfo> {
     let parent_surface = &surfaces[parent_surface_index.0];
 
+    let parent_clipping_rect = parent_surface.clipping_rect_in_picture_space();
+
     let local_to_parent = SpaceMapper::new_with_target(
         parent_surface.surface_spatial_node_index,
         surfaces[surface_index.0].surface_spatial_node_index,
-        parent_surface.clipping_rect,
+        parent_clipping_rect,
         spatial_tree,
     );
 
     let local_clip_rect = local_to_parent
-        .unmap(&parent_surface.clipping_rect)
+        .unmap(&parent_clipping_rect)
         .unwrap_or(PictureRect::max_rect())
         .cast_unit();
 

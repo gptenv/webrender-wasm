@@ -253,9 +253,16 @@ pub struct SurfaceInfo {
     /// The local space coverage of child primitives after they are
     /// are clipped to their owning clip-chain.
     pub clipped_local_rect: PictureRect,
-    /// The (conservative) valid part of this surface rect. Used
-    /// to reduce the size of render target allocation.
-    pub clipping_rect: PictureRect,
+    /// The (conservative) valid part of this surface, in this surface's device
+    /// space. Used to reduce the size of render target allocation.
+    ///
+    /// Device space rather than picture space because every consumer intersects
+    /// a primitive's footprint against it to size or place a render task, which
+    /// is a device-space rect. The mapping between the two spaces is a 2D
+    /// scale+offset (see `picture_to_device`) and so distributes over
+    /// intersection, which is what lets the intersection happen on this side of
+    /// it without changing the result.
+    pub clipping_rect: DeviceRect,
     /// The rectangle to use for culling and clipping, in the local space of
     /// `raster_spatial_node_index`. A primitive outside it cannot affect
     /// anything on screen.
@@ -416,7 +423,7 @@ impl SurfaceInfo {
             unclipped_local_rect: PictureRect::zero(),
             clipped_local_rect: PictureRect::zero(),
             is_opaque: false,
-            clipping_rect: PictureRect::zero(),
+            clipping_rect: DeviceRect::zero(),
             map_local_to_picture,
             picture_to_device: picture_to_device_mapping(
                 surface_spatial_node_index,
@@ -569,25 +576,50 @@ impl SurfaceInfo {
         self.picture_to_device.map_rect(picture_rect)
     }
 
-    /// Clip and transform a local rect to a device rect suitable for allocating
-    /// a child off-screen surface of this surface (e.g. for clip-masks)
+    /// Map a rect in this surface's device space back into its picture space.
+    pub fn device_to_picture_rect(
+        &self,
+        device_rect: &DeviceRect,
+    ) -> PictureRect {
+        // Content on a surface with no device scale should have been culled out
+        // earlier: there is no device space to come back from.
+        assert!(self.device_pixel_scale.0 > 0.0);
+
+        self.picture_to_device.unmap_rect(device_rect)
+    }
+
+    /// `clipping_rect` in this surface's picture space, for the few consumers
+    /// that need to relate it to another surface's picture space rather than
+    /// intersect it with a device rect.
+    pub fn clipping_rect_in_picture_space(&self) -> PictureRect {
+        // `max_rect` means "clip nothing", which has to survive as `max_rect`
+        // rather than be divided by the device scale.
+        if self.clipping_rect == DeviceRect::max_rect() {
+            return PictureRect::max_rect();
+        }
+
+        self.device_to_picture_rect(&self.clipping_rect)
+    }
+
+    /// Clip a device rect and round it out to a device rect suitable for
+    /// allocating a child off-screen surface of this surface (e.g. for
+    /// clip-masks)
     pub fn get_surface_rect(
         &self,
         local_rect: &PictureRect,
     ) -> Option<DeviceIntRect> {
-        let local_rect = match local_rect.intersection(&self.clipping_rect) {
-            Some(rect) => rect,
-            None => return None,
-        };
-
         // The content should have been culled out earlier.
         assert!(self.device_pixel_scale.0 > 0.0);
 
-        let surface_rect = self.map_to_device_rect(&local_rect).round_out().to_i32();
+        let device_rect = self
+            .map_to_device_rect(local_rect)
+            .intersection(&self.clipping_rect)?;
+
+        let surface_rect = device_rect.round_out().to_i32();
         if surface_rect.is_empty() {
-            // The local_rect computed above may have non-empty size that is very
-            // close to zero. Due to limited arithmetic precision, the mapping
-            // might transform the near-zero-sized rect into a zero-sized one.
+            // `local_rect` may have non-empty size that is very close to zero.
+            // Due to limited arithmetic precision, the mapping might transform
+            // the near-zero-sized rect into a zero-sized one.
             return None;
         }
 
@@ -791,7 +823,7 @@ impl SurfaceBuilder {
         &mut self,
         surface_index: SurfaceIndex,
         is_sub_graph: bool,
-        clipping_rect: PictureRect,
+        clipping_rect: DeviceRect,
         descriptor: Option<SurfaceDescriptor>,
         surfaces: &mut [SurfaceInfo],
         rg_builder: &RenderTaskGraphBuilder,

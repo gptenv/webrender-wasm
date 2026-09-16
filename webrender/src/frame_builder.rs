@@ -570,7 +570,7 @@ impl FrameBuilder {
             frame_state.surface_builder.push_surface(
                 snapshot_surface,
                 false,
-                PictureRect::max_rect(),
+                DeviceRect::max_rect(),
                 None,
                 frame_state.surfaces,
                 frame_state.rg_builder,

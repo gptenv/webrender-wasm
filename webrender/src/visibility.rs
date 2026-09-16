@@ -649,7 +649,7 @@ pub fn compute_surface_visible_rect(
         spatial_tree,
     );
 
-    surface.clipping_rect
+    surface.clipping_rect_in_picture_space()
         .intersection(&clip_chain.pic_coverage_rect)
         .and_then(|rect| map_prim_to_surface.unmap(&rect))
         .unwrap_or(*bounds)
