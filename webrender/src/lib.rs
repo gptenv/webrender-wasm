@@ -162,6 +162,7 @@ mod prepare;
 mod prim_store;
 mod print_tree;
 mod quad;
+mod quad_clip;
 mod render_backend;
 pub mod render_backend_pool;
 mod render_target;
