@@ -442,7 +442,7 @@ impl From<WorldPoint> for PointKey {
 
 /// A hashable size for use as a fragment of an interning key; the raw `f32`
 /// bits are hashed.
-#[derive(Copy, Debug, Clone, MallocSizeOf, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Debug, Default, Clone, MallocSizeOf, PartialEq, Serialize, Deserialize, PeekPoke)]
 pub struct SizeKey {
     w: f32,
     h: f32,
@@ -473,7 +473,7 @@ impl<U> From<Size2D<f32, U>> for SizeKey {
 /// per-axis `fills_*` flags mean the axis fills the primitive rect (resolved at
 /// frame build); when both are set the stored `size` is normalised to zero so
 /// primitives of different sizes still intern to the same key.
-#[derive(Copy, Debug, Clone, MallocSizeOf, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Debug, Default, Clone, MallocSizeOf, PartialEq, Eq, Hash, Serialize, Deserialize, PeekPoke)]
 pub struct StretchSizeKey {
     pub size: SizeKey,
     pub fills_width: bool,

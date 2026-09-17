@@ -23,11 +23,10 @@ use crate::gradient_builder::GradientBuilder;
 use crate::color::{ColorF, ColorU};
 use crate::font::{FontInstanceKey, GlyphInstance, GlyphOptions};
 use crate::image::{ColorDepth, ImageKey};
-use crate::key_types::EdgeMask;
-use crate::key_types::GradientStopKey;
+use crate::key_types::{EdgeMask, GradientStopKey, StretchSizeKey};
 use crate::prim_geometry::{
-    apply_gradient_local_clip, optimize_linear_gradient, optimize_radial_gradient,
-    resolve_tile_size, simplify_repeated_primitive,
+    apply_gradient_local_clip, image_stretch_size, optimize_linear_gradient,
+    optimize_radial_gradient, resolve_tile_size, simplify_repeated_primitive,
 };
 use crate::units::*;
 
@@ -342,7 +341,6 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 Debug::HitTest(v) => Real::HitTest(v),
                 Debug::Line(v) => Real::Line(v),
                 Debug::Image(v) => Real::Image(v),
-                Debug::RepeatingImage(v) => Real::RepeatingImage(v),
                 Debug::YuvImage(v) => Real::YuvImage(v),
                 Debug::Border(v) => Real::Border(v),
                 Debug::BoxShadow(v) => Real::BoxShadow(v),
@@ -632,7 +630,6 @@ impl BuiltDisplayList {
                 Real::HitTest(v) => Debug::HitTest(v),
                 Real::Line(v) => Debug::Line(v),
                 Real::Image(v) => Debug::Image(v),
-                Real::RepeatingImage(v) => Debug::RepeatingImage(v),
                 Real::YuvImage(v) => Debug::YuvImage(v),
                 Real::Border(v) => Debug::Border(v),
                 Real::BoxShadow(v) => Debug::BoxShadow(v),
@@ -1487,17 +1484,16 @@ impl DisplayListBuilder {
         key: ImageKey,
         color: ColorF,
     ) {
-        let (common, offset) = self.normalize_common(common);
-        let item = di::DisplayItem::Image(di::ImageDisplayItem {
+        self.push_image_prim(
             common,
-            bounds: self.shift_rect(bounds, offset),
-            image_key: key,
+            bounds,
+            StretchSizeKey::fills_prim(),
+            LayoutSize::zero(),
             image_rendering,
             alpha_type,
+            key,
             color,
-        });
-
-        self.push_item(&item);
+        );
     }
 
     pub fn push_repeating_image(
@@ -1511,13 +1507,37 @@ impl DisplayListBuilder {
         key: ImageKey,
         color: ColorF,
     ) {
+        self.push_image_prim(
+            common,
+            bounds,
+            image_stretch_size(&bounds, stretch_size),
+            tile_spacing,
+            image_rendering,
+            alpha_type,
+            key,
+            color,
+        );
+    }
+
+    /// The one item both image pushes produce.
+    fn push_image_prim(
+        &mut self,
+        common: &di::CommonItemProperties,
+        bounds: LayoutRect,
+        stretch_size: StretchSizeKey,
+        tile_spacing: LayoutSize,
+        image_rendering: di::ImageRendering,
+        alpha_type: di::AlphaType,
+        key: ImageKey,
+        color: ColorF,
+    ) {
         let (common, offset) = self.normalize_common(common);
-        let item = di::DisplayItem::RepeatingImage(di::RepeatingImageDisplayItem {
+        let item = di::DisplayItem::Image(di::ImageDisplayItem {
             common,
             bounds: self.shift_rect(bounds, offset),
-            image_key: key,
             stretch_size,
             tile_spacing,
+            image_key: key,
             image_rendering,
             alpha_type,
             color,
