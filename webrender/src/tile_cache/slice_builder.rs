@@ -4,7 +4,7 @@
 
 use api::{BorderRadius, ClipId, ClipMode, ColorF, DebugFlags, PrimitiveFlags, QualitySettings, RasterSpace};
 use api::units::*;
-use crate::clip::{clamped_radius, ClipItemKeyKind, ClipNodeId, ClipTreeBuilder, intersect_rounded_rects};
+use crate::clip::{clamped_radius, ClipItemKeyKind, ClipNodeId, ClipTreeBuilder, SceneClipStore, intersect_rounded_rects};
 use crate::frame_builder::FrameBuilderConfig;
 use crate::internal_types::FastHashMap;
 use crate::picture::{PrimitiveList, PictureInstance, Picture3DContext, PictureFlags};
@@ -12,7 +12,6 @@ use crate::picture_composite_mode::PictureCompositeMode;
 use crate::tile_cache::{SliceId, TileCacheParams};
 use crate::prim_store::{PrimitiveInstance, PrimitiveStore, PictureIndex};
 use crate::scene_building::SliceFlags;
-use crate::scene_builder_thread::Interners;
 use crate::spatial_tree::{SpatialNodeIndex, SceneSpatialTree};
 use crate::util::VecHelper;
 use std::mem;
@@ -399,7 +398,7 @@ impl TileCacheBuilder {
         spatial_tree: &SceneSpatialTree,
         prim_instances: &[PrimitiveInstance],
         clip_tree_builder: &mut ClipTreeBuilder,
-        interners: &Interners,
+        clips: &SceneClipStore,
     ) -> (TileCacheConfig, Vec<PictureIndex>) {
         let mut result = TileCacheConfig::new(self.primary_slices.len());
         let mut tile_cache_pictures = Vec::new();
@@ -430,7 +429,7 @@ impl TileCacheBuilder {
                             &mut result.tile_caches,
                             &mut tile_cache_pictures,
                             clip_tree_builder,
-                            interners,
+                            clips,
                             spatial_tree,
                         );
                     }
@@ -450,7 +449,7 @@ impl TileCacheBuilder {
                             &mut result.tile_caches,
                             &mut tile_cache_pictures,
                             clip_tree_builder,
-                            interners,
+                            clips,
                             spatial_tree,
                         );
                     }
@@ -494,7 +493,7 @@ fn create_tile_cache(
     tile_caches: &mut FastHashMap<SliceId, TileCacheParams>,
     tile_cache_pictures: &mut Vec<PictureIndex>,
     clip_tree_builder: &mut ClipTreeBuilder,
-    interners: &Interners,
+    clips: &SceneClipStore,
     spatial_tree: &SceneSpatialTree,
 ) {
     // Accumulate any clip instances from the iframe_clip into the shared clips
@@ -553,7 +552,7 @@ fn create_tile_cache(
     // Walk up the hierarchy to the root of the clip-tree
     while current_node_id != ClipNodeId::NONE {
         let node = clip_tree_builder.get_node(current_node_id);
-        let clip_node_data = &interners.clip[node.handle];
+        let clip_node_data = &clips[node.handle];
 
         // Check if this clip is in the root coord system (i.e. is axis-aligned with tile-cache)
         let is_rcs = spatial_tree.is_root_coord_system(node.spatial_node_index);

@@ -108,7 +108,6 @@ use crate::prim_store::{ClipSnap, RectKey, PolygonKey};
 use crate::render_task::RenderTask;
 use crate::render_task_graph::RenderTaskGraphBuilder;
 use crate::resource_cache::{ImageRequest, ResourceCache};
-use crate::scene_builder_thread::Interners;
 use crate::space::{SpaceMapper, SpaceSnapper};
 use crate::util::{extract_inner_rect_safe, project_rect, MatrixHelpers, MaxRect, ScaleOffset};
 use euclid::approxeq::ApproxEq;
@@ -731,12 +730,12 @@ impl ClipTreeBuilder {
     fn has_complex_clips_impl(
         &self,
         clip_chain_index: usize,
-        interners: &Interners,
+        clips: &SceneClipStore,
     ) -> bool {
         let clip_chain = &self.clip_chains[clip_chain_index];
 
         for clip_entry in &clip_chain.clips {
-            let clip_info = &interners.clip[clip_entry.handle];
+            let clip_info = &clips[clip_entry.handle];
 
             if let ClipNodeKind::Complex = clip_info.key.kind.node_kind() {
                 return true;
@@ -744,7 +743,7 @@ impl ClipTreeBuilder {
         }
 
         match clip_chain.parent {
-            Some(parent) => self.has_complex_clips_impl(parent, interners),
+            Some(parent) => self.has_complex_clips_impl(parent, clips),
             None => false,
         }
     }
@@ -753,7 +752,7 @@ impl ClipTreeBuilder {
     pub fn clip_chain_has_complex_clips(
         &self,
         clip_chain_id: ClipChainId,
-        interners: &Interners,
+        clips: &SceneClipStore,
     ) -> bool {
         let clip_chain_index = match self.clip_chain_map.get(&clip_chain_id) {
             Some(index) => *index,
@@ -763,7 +762,7 @@ impl ClipTreeBuilder {
                 self.clip_chain_map.len(),
             ),
         };
-        self.has_complex_clips_impl(clip_chain_index, interners)
+        self.has_complex_clips_impl(clip_chain_index, clips)
     }
 
     /// Check if all complex clips in a clip chain are fixed-position rounded
@@ -773,7 +772,7 @@ impl ClipTreeBuilder {
     pub fn clip_chain_complex_clips_are_promotable(
         &self,
         clip_chain_id: ClipChainId,
-        interners: &Interners,
+        clips: &SceneClipStore,
         spatial_tree: &SceneSpatialTree,
     ) -> bool {
         let clip_chain_index = match self.clip_chain_map.get(&clip_chain_id) {
@@ -784,13 +783,13 @@ impl ClipTreeBuilder {
                 self.clip_chain_map.len(),
             ),
         };
-        self.complex_clips_are_promotable_impl(clip_chain_index, interners, spatial_tree)
+        self.complex_clips_are_promotable_impl(clip_chain_index, clips, spatial_tree)
     }
 
     fn complex_clips_are_promotable_impl(
         &self,
         clip_chain_index: usize,
-        interners: &Interners,
+        clips: &SceneClipStore,
         spatial_tree: &SceneSpatialTree,
     ) -> bool {
         let mut index = clip_chain_index;
@@ -799,7 +798,7 @@ impl ClipTreeBuilder {
             let clip_chain = &self.clip_chains[index];
 
             for clip_entry in &clip_chain.clips {
-                let clip_info = &interners.clip[clip_entry.handle];
+                let clip_info = &clips[clip_entry.handle];
 
                 match clip_info.key.kind {
                     ClipItemKeyKind::Rectangle(ClipMode::Clip) => {}
@@ -823,13 +822,13 @@ impl ClipTreeBuilder {
     pub fn clip_node_has_complex_clips(
         &self,
         clip_node_id: ClipNodeId,
-        interners: &Interners,
+        clips: &SceneClipStore,
     ) -> bool {
         let mut current = clip_node_id;
 
         while current != ClipNodeId::NONE {
             let node = &self.tree.nodes[current.0 as usize];
-            let clip_info = &interners.clip[node.handle];
+            let clip_info = &clips[node.handle];
 
             if let ClipNodeKind::Complex = clip_info.key.kind.node_kind() {
                 return true;
@@ -923,6 +922,10 @@ pub enum ClipIntern {}
 
 pub type ClipDataStore = intern::DataStore<ClipIntern>;
 pub type ClipDataHandle = intern::Handle<ClipIntern>;
+
+/// The scene builder's view of the interned clips, which clip chain building,
+/// slice partitioning and hit testing read for the clip's key.
+pub type SceneClipStore = intern::Interner<ClipIntern>;
 
 /// Helper to identify simple clips (normal rects) from other kinds of clips,
 /// which can often be handled via fast code paths.

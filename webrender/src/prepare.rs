@@ -52,7 +52,7 @@ use euclid::Scale;
 use crate::composite::CompositorSurfaceKind;
 use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand};
 
-use crate::clip::ClipNodeRange;
+use crate::clip::{ClipDataStore, ClipNodeRange};
 use crate::pattern::image::ImagePattern;
 
 use crate::pattern::yuv::YuvPattern;
@@ -413,7 +413,7 @@ fn prepare_prim_for_render(
                 pic_context,
                 frame_context,
                 frame_state,
-                data_stores,
+                &data_stores.clip,
                 scratch,
             ) {
                 return;
@@ -1269,7 +1269,7 @@ fn add_clip_mask_render_task(
     prim_spatial_node_index: SpatialNodeIndex,
     raster_spatial_node_index: SpatialNodeIndex,
     device_pixel_scale: DevicePixelScale,
-    data_stores: &DataStores,
+    clips: &ClipDataStore,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
 ) -> RenderTaskId {
@@ -1286,15 +1286,15 @@ fn add_clip_mask_render_task(
 
     let task_rect = device_rect.to_f32();
 
-    let mut clips = QuadClipStack::new();
+    let mut quad_clips = QuadClipStack::new();
     frame_state.clip_store.fill_quad_clips_from_range(
-        &mut clips,
+        &mut quad_clips,
         clip_node_range,
-        &data_stores.clip,
+        clips,
     );
 
     quad::prepare_clip_range(
-        &clips,
+        &quad_clips,
         clip_task_id,
         &task_rect,
         &prim_local_rect,
@@ -1318,7 +1318,7 @@ pub fn update_clip_task(
     pic_context: &PictureContext,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
-    data_stores: &DataStores,
+    clips: &ClipDataStore,
     scratch: &mut PrimitiveScratchBuffer,
 ) -> bool {
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
@@ -1351,7 +1351,7 @@ pub fn update_clip_task(
             prim_spatial_node_index,
             root_spatial_node_index,
             device_pixel_scale,
-            data_stores,
+            clips,
             frame_context,
             frame_state,
         );
