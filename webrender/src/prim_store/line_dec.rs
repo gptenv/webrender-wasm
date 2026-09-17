@@ -11,7 +11,6 @@ use euclid::Scale;
 use crate::render_task::{RenderTask, RenderTaskKind};
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent};
 use crate::render_task_graph::RenderTaskId;
-use crate::scene_building::{IsVisible};
 use crate::frame_builder::FrameBuildingState;
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
@@ -207,13 +206,6 @@ impl InternablePrimitive for LineDecoration {
         PrimitiveKind::LineDecoration {
             data_handle,
         }
-    }
-}
-
-
-impl IsVisible for LineDecoration {
-    fn is_visible(&self) -> bool {
-        self.color.a > 0
     }
 }
 

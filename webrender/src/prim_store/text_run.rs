@@ -6,7 +6,6 @@ use api::{ColorF, FontInstanceFlags, GlyphInstance, RasterSpace};
 use api::units::LayoutToWorldTransform;
 use api::units::*;
 use crate::space::SpaceSnapper;
-use crate::scene_building::{IsVisible};
 use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, SubpixelDirection, FONT_SIZE_LIMIT};
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
@@ -204,13 +203,6 @@ impl InternablePrimitive for TextRun {
         PrimitiveKind::TextRun {
             data_handle,
         }
-    }
-}
-
-
-impl IsVisible for TextRun {
-    fn is_visible(&self) -> bool {
-        self.font.color.a > 0
     }
 }
 

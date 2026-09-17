@@ -14,7 +14,6 @@ use api::{ExtendMode, GradientStop};
 use api::units::*;
 use crate::pattern::gradient::linear_gradient_pattern;
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
-use crate::scene_building::IsVisible;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{PrimitiveKind, PrimitiveOpacity};
@@ -374,12 +373,6 @@ impl InternablePrimitive for LinearGradient {
         PrimitiveKind::LinearGradient {
             data_handle,
         }
-    }
-}
-
-impl IsVisible for LinearGradient {
-    fn is_visible(&self) -> bool {
-        true
     }
 }
 

@@ -17,7 +17,7 @@ use crate::render_task::{RenderTask, RenderTaskKind, MAX_BLUR_STD_DEVIATION};
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent, to_cache_size};
 use crate::render_target::RenderTargetKind;
 use crate::gpu_types::BlurEdgeMode;
-use crate::scene_building::{SceneBuilder, IsVisible};
+use crate::scene_building::SceneBuilder;
 use crate::space::SpaceSnapper;
 use crate::spatial_tree::SpatialNodeIndex;
 use crate::internal_types::LayoutPrimitiveInfo;
@@ -29,12 +29,6 @@ use crate::util::clamp_to_scale_factor;
 pub use api::interned_prims::{BoxShadow, BoxShadowKey};
 
 impl InternDebug for BoxShadowKey {}
-
-impl IsVisible for BoxShadow {
-    fn is_visible(&self) -> bool {
-        true
-    }
-}
 
 pub type BoxShadowDataHandle = InternHandle<BoxShadow>;
 

@@ -1395,6 +1395,21 @@ impl DisplayListBuilder {
         bounds: LayoutRect,
         color: PropertyBinding<ColorF>,
     ) {
+        let (common, offset) = self.normalize_common(common);
+        let bounds = self.shift_rect(bounds, offset);
+        self.push_rect_prim(&common, bounds, color, EdgeMask::all());
+    }
+
+    /// Record a rectangle whose `common` and `bounds` are already normalised.
+    /// Every rectangle item goes through here, so this is the one place the
+    /// visibility test lives.
+    fn push_rect_prim(
+        &mut self,
+        common: &di::CommonItemProperties,
+        bounds: LayoutRect,
+        color: PropertyBinding<ColorF>,
+        transformed_aa_edges: EdgeMask,
+    ) {
         // A fully transparent rectangle draws nothing, so drop it here rather
         // than have the scene builder discover it. Two exceptions: inside a
         // shadow scope it is still captured so `pop_all_shadows` can copy it
@@ -1408,14 +1423,12 @@ impl DisplayListBuilder {
             return;
         }
 
-        let (common, offset) = self.normalize_common(common);
-        let item = di::DisplayItem::Rectangle(di::RectangleDisplayItem {
-            common,
+        self.push_item(&di::DisplayItem::Rectangle(di::RectangleDisplayItem {
+            common: *common,
             color,
-            bounds: self.shift_rect(bounds, offset),
-            transformed_aa_edges: EdgeMask::all(),
-        });
-        self.push_item(&item);
+            bounds,
+            transformed_aa_edges,
+        }));
     }
 
     pub fn push_hit_test(
@@ -2019,14 +2032,16 @@ impl DisplayListBuilder {
             gradient.extend_mode,
             &stop_keys,
             &mut |solid_rect, color, aa_mask| {
-                // Pushed before the gradient, and unconditionally: a gradient
-                // that optimizes away entirely is all margin.
-                self.push_item(&di::DisplayItem::Rectangle(di::RectangleDisplayItem {
-                    common,
-                    bounds: *solid_rect,
-                    color: PropertyBinding::Value(color.into()),
-                    transformed_aa_edges: aa_mask,
-                }));
+                // Pushed before the gradient, and whether or not the gradient
+                // itself survives the empty-tile reject below: a gradient that
+                // optimizes away entirely is all margin. A transparent margin
+                // is dropped like any other transparent rectangle.
+                self.push_rect_prim(
+                    &common,
+                    *solid_rect,
+                    PropertyBinding::Value(color.into()),
+                    aa_mask,
+                );
             },
         );
 

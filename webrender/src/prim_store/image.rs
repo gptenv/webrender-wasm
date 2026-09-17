@@ -11,7 +11,6 @@ use crate::command_buffer::CommandBufferIndex;
 use crate::pattern::image::ImagePattern;
 use crate::quad::{QuadDescriptor, QuadTransformState};
 use crate::quad_clip::QuadClipStack;
-use crate::scene_building::{IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
 use crate::intern::{Handle as InternHandle, InternDebug, Internable};
 use crate::internal_types::LayoutPrimitiveInfo;
@@ -462,13 +461,6 @@ impl InternablePrimitive for Image {
     }
 }
 
-
-impl IsVisible for Image {
-    fn is_visible(&self) -> bool {
-        true
-    }
-}
-
 /// Represents an adjustment to apply to an image primitive.
 /// This can be used to compensate for a difference between the bounds of
 /// the images expected by the primitive and the bounds that were actually
@@ -677,12 +669,6 @@ impl InternablePrimitive for YuvImage {
         PrimitiveKind::YuvImage {
             data_handle,
         }
-    }
-}
-
-impl IsVisible for YuvImage {
-    fn is_visible(&self) -> bool {
-        true
     }
 }
 

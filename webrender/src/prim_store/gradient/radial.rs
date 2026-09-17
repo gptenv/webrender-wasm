@@ -12,7 +12,6 @@ use api::{ExtendMode, GradientStop};
 use api::units::*;
 use crate::pattern::gradient::{radial_gradient_pattern};
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
-use crate::scene_building::IsVisible;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{InternablePrimitive};
@@ -146,12 +145,6 @@ impl InternablePrimitive for RadialGradient {
         PrimitiveKind::RadialGradient {
             data_handle,
         }
-    }
-}
-
-impl IsVisible for RadialGradient {
-    fn is_visible(&self) -> bool {
-        true
     }
 }
 
