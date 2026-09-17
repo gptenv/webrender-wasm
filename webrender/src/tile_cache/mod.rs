@@ -2695,7 +2695,7 @@ impl TileCacheInstance {
             }
             PrimitiveKind::TextRun { .. } => {
                 // A text run under an animated transform is rasterized in local
-                // space (see TextRunTemplate::get_raster_space_for_prim, bug
+                // space (see TextRun::get_raster_space_for_prim, bug
                 // 2053638). Record that as a dependency so the tile invalidates
                 // when the animation ends and the text returns to the crisp
                 // device path - the raster-space flip alone changes neither
