@@ -44,7 +44,7 @@ use crate::util::MaxRect;
 use crate::box_shadow::prepare_box_shadow;
 
 use crate::pattern::gradient::linear_gradient_pattern;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState};
 use crate::prim_store::gradient::{decompose_axis_aligned_gradient, linear_gradient_decomposes};
 use crate::segment::EdgeMask;
 use api::units::*;
@@ -1402,15 +1402,15 @@ struct LinearGradientSegmentPattern {
 impl PatternBuilder for LinearGradientSegmentPattern {
     fn build(
         &self,
+        pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
         offset: LayoutVector2D,
-        ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        let prim_offset = offset + ctx.prim_origin.to_vector();
+        let prim_origin = pattern_rect.min + offset;
         linear_gradient_pattern(
-            self.start + prim_offset,
-            self.end + prim_offset,
+            prim_origin + self.start.to_vector(),
+            prim_origin + self.end.to_vector(),
             ExtendMode::Clamp,
             &self.stops,
             state.frame_gpu_data,

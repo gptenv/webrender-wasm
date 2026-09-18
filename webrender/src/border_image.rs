@@ -8,7 +8,7 @@ use api::units::*;
 use crate::border::compute_border_repetition_1d;
 use crate::command_buffer::CommandBufferIndex;
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
-use crate::pattern::{PatternBuilder, PatternBuilderContext, PatternBuilderState};
+use crate::pattern::{PatternBuilder, PatternBuilderState};
 use crate::pattern::image::ImagePattern;
 use crate::quad::{QuadDescriptor, QuadTransformState, prepare_repeatable_quad};
 use crate::quad_clip::QuadClipStack;
@@ -31,15 +31,10 @@ pub fn prepare_border_image_nine_patch(
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
 ) {
-    let pattern_ctx = PatternBuilderContext {
-        spatial_tree: frame_context.spatial_tree,
-        prim_origin: desc.pattern_rect.min,
-    };
-
     let img_pattern = src_image.build(
+        &desc.pattern_rect,
         None,
         LayoutVector2D::zero(),
-        &pattern_ctx,
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,

@@ -17,7 +17,7 @@ use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand, QuadFlags};
 use crate::frame_builder::{FrameBuildingState, PictureContext};
 use crate::gpu_types::{PrimitiveInstanceData, QuadHeader, QuadInstance, QuadPrimitive, QuadSegment, ZBufferId};
 use crate::internal_types::TextureSource;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState, PatternKind, PatternShaderInput};
 use crate::prim_store::{NinePatchDescriptor, PrimitiveScratchBuffer};
 use crate::quad_clip::{QuadClip, QuadClipShape, QuadClipStack, QuadMaskTile};
 use crate::render_task::{RenderTask, RenderTaskAddress, RenderTaskKind};
@@ -233,15 +233,10 @@ pub fn prepare_quad(
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
 ) {
-    let pattern_ctx = PatternBuilderContext {
-        spatial_tree,
-        prim_origin: desc.pattern_rect.min,
-    };
-
     let pattern = pattern_builder.build(
+        &desc.pattern_rect,
         None,
         LayoutVector2D::zero(),
-        &pattern_ctx,
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,
@@ -291,15 +286,10 @@ pub fn prepare_repeatable_quad(
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
 ) {
-    let pattern_ctx = PatternBuilderContext {
-        spatial_tree,
-        prim_origin: desc.pattern_rect.min,
-    };
-
     let pattern = pattern_builder.build(
+        &desc.pattern_rect,
         None,
         LayoutVector2D::zero(),
-        &pattern_ctx,
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,
@@ -423,9 +413,9 @@ pub fn prepare_repeatable_quad(
         };
 
         let repeat_pattern = repetitions.build(
+            &desc.pattern_rect,
             None,
             LayoutVector2D::zero(),
-            &pattern_ctx,
             &mut PatternBuilderState {
                 frame_gpu_data: frame_state.frame_gpu_data,
                 transforms: frame_state.transforms,
@@ -474,9 +464,9 @@ pub fn prepare_repeatable_quad(
         }
         let pattern_offset = tile.origin - desc.pattern_rect.min;
         let pattern = pattern_builder.build(
+            &desc.pattern_rect,
             None,
             pattern_offset,
-            &pattern_ctx,
             &mut PatternBuilderState {
                 frame_gpu_data: frame_state.frame_gpu_data,
                 transforms: frame_state.transforms,
@@ -521,15 +511,10 @@ pub fn prepare_border_nine_patch(
     frame_state: &mut FrameBuildingState,
     scratch: &mut PrimitiveScratchBuffer,
 ) {
-    let pattern_ctx = PatternBuilderContext {
-        spatial_tree,
-        prim_origin: desc.pattern_rect.min,
-    };
-
     let pattern = pattern_builder.build(
+        &desc.pattern_rect,
         None,
         LayoutVector2D::zero(),
-        &pattern_ctx,
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,

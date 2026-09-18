@@ -11,7 +11,7 @@
 use api::{ExtendMode, GradientStop};
 use api::units::*;
 use crate::pattern::gradient::{conic_gradient_pattern};
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{PrimitiveKind, PrimitiveOpacity};
@@ -54,15 +54,15 @@ pub struct ConicGradientTemplate {
 impl PatternBuilder for ConicGradientTemplate {
     fn build(
         &self,
+        pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
         offset: LayoutVector2D,
-        ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // ConicGradientTemplate stores the center point relative to the primitive
         // origin, but the shader works with start/end points in "proper" layout
         // coordinates (relative to the primitive's spatial node).
-        let center = self.center + ctx.prim_origin.to_vector() + offset;
+        let center = pattern_rect.min + self.center.to_vector() + offset;
 
         conic_gradient_pattern(
             center,

@@ -13,7 +13,7 @@ use euclid::point2;
 use api::{ExtendMode, GradientStop};
 use api::units::*;
 use crate::pattern::gradient::linear_gradient_pattern;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{PrimitiveKind, PrimitiveOpacity};
@@ -53,9 +53,9 @@ pub struct LinearGradientTemplate {
 impl PatternBuilder for LinearGradientTemplate {
     fn build(
         &self,
+        pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
         offset: LayoutVector2D,
-        ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         let (start, end) = if self.reverse_stops {
@@ -66,10 +66,10 @@ impl PatternBuilder for LinearGradientTemplate {
         // LinearGradientTemplate stores the start and end points relative to the
         // primitive origin, but the shader works with start/end points in "proper"
         // layout coordinates (relative to the primitive's spatial node).
-        let offset = offset + ctx.prim_origin.to_vector();
+        let prim_origin = pattern_rect.min + offset;
         linear_gradient_pattern(
-            start + offset,
-            end + offset,
+            prim_origin + start.to_vector(),
+            prim_origin + end.to_vector(),
             self.extend_mode,
             &self.stops,
             state.frame_gpu_data,
