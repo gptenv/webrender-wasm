@@ -25,7 +25,6 @@ impl PatternBuilder for ImagePattern {
         &self,
         _pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        _offset: LayoutVector2D,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         let blend_mode = if self.premultiplied || self.src_is_opaque {
@@ -62,7 +61,6 @@ impl PatternBuilder for ShadowPattern {
         &self,
         _pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        _offset: LayoutVector2D,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern {

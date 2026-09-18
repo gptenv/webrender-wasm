@@ -28,7 +28,6 @@ impl PatternBuilder for BackdropPattern {
         &self,
         _pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        _offset: LayoutVector2D,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // See fetch in ps_quad_backdrop.glsl.

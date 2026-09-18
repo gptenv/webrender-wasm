@@ -1404,10 +1404,9 @@ impl PatternBuilder for LinearGradientSegmentPattern {
         &self,
         pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        offset: LayoutVector2D,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        let prim_origin = pattern_rect.min + offset;
+        let prim_origin = pattern_rect.min;
         linear_gradient_pattern(
             prim_origin + self.start.to_vector(),
             prim_origin + self.end.to_vector(),

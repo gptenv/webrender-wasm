@@ -55,7 +55,6 @@ impl PatternBuilder for LinearGradientTemplate {
         &self,
         pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        offset: LayoutVector2D,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         let (start, end) = if self.reverse_stops {
@@ -66,10 +65,9 @@ impl PatternBuilder for LinearGradientTemplate {
         // LinearGradientTemplate stores the start and end points relative to the
         // primitive origin, but the shader works with start/end points in "proper"
         // layout coordinates (relative to the primitive's spatial node).
-        let prim_origin = pattern_rect.min + offset;
         linear_gradient_pattern(
-            prim_origin + start.to_vector(),
-            prim_origin + end.to_vector(),
+            pattern_rect.min + start.to_vector(),
+            pattern_rect.min + end.to_vector(),
             self.extend_mode,
             &self.stops,
             state.frame_gpu_data,

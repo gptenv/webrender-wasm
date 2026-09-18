@@ -58,13 +58,12 @@ impl PatternBuilder for RadialGradientTemplate {
         &self,
         pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        offset: LayoutVector2D,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // RadialGradientTemplate stores the center point relative to the primitive
         // origin, but the shader works with start/end points in "proper" layout
         // coordinates (relative to the primitive's spatial node).
-        let center = pattern_rect.min + self.center.to_vector() + offset;
+        let center = pattern_rect.min + self.center.to_vector();
 
         radial_gradient_pattern(
             center,

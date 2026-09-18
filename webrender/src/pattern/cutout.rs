@@ -23,7 +23,6 @@ impl PatternBuilder for Cutout {
         &self,
         _pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        _offset: LayoutVector2D,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern::color(ColorF::WHITE)

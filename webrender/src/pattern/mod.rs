@@ -147,7 +147,6 @@ pub trait PatternBuilder {
         &self,
         pattern_rect: &LayoutRect,
         sub_rect: Option<DeviceRect>,
-        offset: LayoutVector2D,
         state: &mut PatternBuilderState,
     ) -> Pattern;
 }
@@ -228,7 +227,6 @@ impl PatternBuilder for ColorF {
         &self,
         _pattern_rect: &LayoutRect,
         _sub_rect: Option<DeviceRect>,
-        _offset: LayoutVector2D,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern::color(*self)

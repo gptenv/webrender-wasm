@@ -34,7 +34,6 @@ pub fn prepare_border_image_nine_patch(
     let img_pattern = src_image.build(
         &desc.pattern_rect,
         None,
-        LayoutVector2D::zero(),
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,

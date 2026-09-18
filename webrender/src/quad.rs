@@ -236,7 +236,6 @@ pub fn prepare_quad(
     let pattern = pattern_builder.build(
         &desc.pattern_rect,
         None,
-        LayoutVector2D::zero(),
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,
@@ -289,7 +288,6 @@ pub fn prepare_repeatable_quad(
     let pattern = pattern_builder.build(
         &desc.pattern_rect,
         None,
-        LayoutVector2D::zero(),
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,
@@ -415,7 +413,6 @@ pub fn prepare_repeatable_quad(
         let repeat_pattern = repetitions.build(
             &desc.pattern_rect,
             None,
-            LayoutVector2D::zero(),
             &mut PatternBuilderState {
                 frame_gpu_data: frame_state.frame_gpu_data,
                 transforms: frame_state.transforms,
@@ -462,11 +459,10 @@ pub fn prepare_repeatable_quad(
         if tile_bounds.is_empty() {
             continue;
         }
-        let pattern_offset = tile.origin - desc.pattern_rect.min;
+
         let pattern = pattern_builder.build(
-            &desc.pattern_rect,
+            &tile_rect,
             None,
-            pattern_offset,
             &mut PatternBuilderState {
                 frame_gpu_data: frame_state.frame_gpu_data,
                 transforms: frame_state.transforms,
@@ -514,7 +510,6 @@ pub fn prepare_border_nine_patch(
     let pattern = pattern_builder.build(
         &desc.pattern_rect,
         None,
-        LayoutVector2D::zero(),
         &mut PatternBuilderState {
             frame_gpu_data: frame_state.frame_gpu_data,
             transforms: frame_state.transforms,
