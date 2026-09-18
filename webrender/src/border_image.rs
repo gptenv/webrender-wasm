@@ -80,7 +80,7 @@ pub fn prepare_border_image_nine_patch(
             &None,
             clips,
             transform,
-            frame_context,
+            frame_context.spatial_tree,
             pic_context,
             targets,
             frame_state,

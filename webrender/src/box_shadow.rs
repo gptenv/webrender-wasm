@@ -453,7 +453,7 @@ pub fn prepare_box_shadow(
         &None,
         clips,
         quad_transform,
-        frame_context,
+        frame_context.spatial_tree,
         pic_context,
         cmd_buffer_targets,
         frame_state,

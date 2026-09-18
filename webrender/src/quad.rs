@@ -14,7 +14,7 @@ use crate::transform::TransformPalette;
 use crate::batch::{BatchKey, BatchKind, BatchTextures};
 use crate::clip::clamped_radius;
 use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand, QuadFlags};
-use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
+use crate::frame_builder::{FrameBuildingState, PictureContext};
 use crate::gpu_types::{PrimitiveInstanceData, QuadHeader, QuadInstance, QuadPrimitive, QuadSegment, ZBufferId};
 use crate::internal_types::TextureSource;
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput};
@@ -226,7 +226,7 @@ pub fn prepare_quad(
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
-    frame_context: &FrameBuildingContext,
+    spatial_tree: &SpatialTree,
     pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
@@ -234,7 +234,7 @@ pub fn prepare_quad(
     scratch: &mut PrimitiveScratchBuffer,
 ) {
     let pattern_ctx = PatternBuilderContext {
-        spatial_tree: frame_context.spatial_tree,
+        spatial_tree,
         prim_origin: desc.pattern_rect.min,
     };
 
@@ -254,7 +254,7 @@ pub fn prepare_quad(
             transform.prim_spatial_node_index(),
             clips,
             transform.is_2d_scale_offset(),
-            pattern_ctx.spatial_tree,
+            spatial_tree,
         ),
     };
 
@@ -266,7 +266,7 @@ pub fn prepare_quad(
         clips,
 
         transform,
-        frame_context.spatial_tree,
+        spatial_tree,
         pic_context,
         targets,
 
@@ -284,7 +284,7 @@ pub fn prepare_repeatable_quad(
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
-    frame_context: &FrameBuildingContext,
+    spatial_tree: &SpatialTree,
     pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
@@ -292,7 +292,7 @@ pub fn prepare_repeatable_quad(
     scratch: &mut PrimitiveScratchBuffer,
 ) {
     let pattern_ctx = PatternBuilderContext {
-        spatial_tree: frame_context.spatial_tree,
+        spatial_tree,
         prim_origin: desc.pattern_rect.min,
     };
 
@@ -316,7 +316,7 @@ pub fn prepare_repeatable_quad(
             transform.prim_spatial_node_index(),
             clips,
             transform.is_2d_scale_offset(),
-            pattern_ctx.spatial_tree,
+            spatial_tree,
         ),
     };
 
@@ -347,7 +347,7 @@ pub fn prepare_repeatable_quad(
             &cache_key,
             clips,
             transform,
-            frame_context.spatial_tree,
+            spatial_tree,
             pic_context,
             targets,
             frame_state,
@@ -405,7 +405,7 @@ pub fn prepare_repeatable_quad(
                     EdgeMask::empty(),
                     cache_key,
                     None,
-                    frame_context.spatial_tree,
+                    spatial_tree,
                     frame_state,
                 ) else {
                     return;
@@ -441,7 +441,7 @@ pub fn prepare_repeatable_quad(
             &None,
             clips,
             transform,
-            frame_context.spatial_tree,
+            spatial_tree,
             pic_context,
             targets,
             frame_state,
@@ -458,7 +458,7 @@ pub fn prepare_repeatable_quad(
         clips.coverage_rect(),
         transform.prim_spatial_node_index(),
         &desc.bounds,
-        frame_context.spatial_tree,
+        spatial_tree,
     );
 
     let stride = stretch_size + tile_spacing;
@@ -497,7 +497,7 @@ pub fn prepare_repeatable_quad(
             &None,
             clips,
             transform,
-            frame_context.spatial_tree,
+            spatial_tree,
             pic_context,
             targets,
             frame_state,
@@ -514,7 +514,7 @@ pub fn prepare_border_nine_patch(
     clips: &QuadClipStack,
     transform: &mut QuadTransformState,
 
-    frame_context: &FrameBuildingContext,
+    spatial_tree: &SpatialTree,
     pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
@@ -522,7 +522,7 @@ pub fn prepare_border_nine_patch(
     scratch: &mut PrimitiveScratchBuffer,
 ) {
     let pattern_ctx = PatternBuilderContext {
-        spatial_tree: frame_context.spatial_tree,
+        spatial_tree,
         prim_origin: desc.pattern_rect.min,
     };
 
@@ -540,7 +540,7 @@ pub fn prepare_border_nine_patch(
         transform.prim_spatial_node_index(),
         clips,
         transform.is_2d_scale_offset(),
-        pattern_ctx.spatial_tree,
+        spatial_tree,
     );
 
     // The indirect transform drives the resolution at which each segment is going
@@ -593,7 +593,7 @@ pub fn prepare_border_nine_patch(
             EdgeMask::empty(),
             &None,
             None,
-            &frame_context.spatial_tree,
+            spatial_tree,
             frame_state,
         ) else {
             return;
@@ -616,7 +616,7 @@ pub fn prepare_border_nine_patch(
             clips,
 
             transform,
-            frame_context.spatial_tree,
+            spatial_tree,
             pic_context,
             targets,
 

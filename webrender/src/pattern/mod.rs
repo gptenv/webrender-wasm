@@ -138,6 +138,7 @@ impl PatternTextureInput {
 }
 
 pub struct PatternBuilderContext<'a> {
+    #[allow(unused)]
     pub spatial_tree: &'a SpatialTree,
     pub prim_origin: LayoutPoint,
 }
