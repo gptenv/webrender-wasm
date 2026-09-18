@@ -99,6 +99,7 @@ use crate::image_tiling::{self, Repetition};
 use crate::border::BorderRadiusAu;
 use crate::renderer::GpuBufferBuilderF;
 use crate::spatial_tree::{SceneSpatialTree, SpatialTree, SpatialNodeIndex};
+use crate::surface::SurfaceInfo;
 use crate::ellipse::Ellipse;
 use crate::intern;
 use crate::internal_types::{FastHashMap, FastHashSet};
@@ -1378,22 +1379,22 @@ impl ClipStore {
     /// Resolve a clip chain instance into a `QuadClipStack`, which the quad path
     /// consumes without reaching back into the clip store or the interner.
     ///
-    /// `device_coverage_rect` is `clip_chain.pic_coverage_rect` mapped through
-    /// the surface the primitive is drawn into. The caller maps it because the
-    /// clip store has no way to pick that surface: it is the destination
-    /// surface, not the one the primitive's own picture belongs to.
+    /// `surface` is the surface the primitive is drawn into. The caller picks
+    /// it because the clip store has no way to: it is the destination surface,
+    /// not the one the primitive's own picture belongs to.
     pub fn fill_quad_clips(
         &self,
         dest: &mut QuadClipStack,
         clip_chain: &ClipChainInstance,
-        device_coverage_rect: DeviceRect,
+        surface: &SurfaceInfo,
         interned_clips: &ClipDataStore,
     ) {
         self.fill_quad_clips_from_range(dest, clip_chain.clips_range, interned_clips);
 
         dest.set_bounds(
             clip_chain.local_clip_rect,
-            device_coverage_rect,
+            surface.map_to_device_rect(&clip_chain.pic_coverage_rect),
+            surface.clipping_rect,
             clip_chain.needs_mask,
         );
     }

@@ -14,7 +14,7 @@ use crate::transform::TransformPalette;
 use crate::batch::{BatchKey, BatchKind, BatchTextures};
 use crate::clip::clamped_radius;
 use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand, QuadFlags};
-use crate::frame_builder::{FrameBuildingState, PictureContext};
+use crate::frame_builder::FrameBuildingState;
 use crate::gpu_types::{PrimitiveInstanceData, QuadHeader, QuadInstance, QuadPrimitive, QuadSegment, ZBufferId};
 use crate::internal_types::TextureSource;
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState, PatternKind, PatternShaderInput};
@@ -248,7 +248,6 @@ pub fn prepare_quad(
     transform: &mut QuadTransformState,
 
     spatial_tree: &SpatialTree,
-    pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
     frame_state: &mut FrameBuildingState,
@@ -282,7 +281,6 @@ pub fn prepare_quad(
 
         transform,
         spatial_tree,
-        pic_context,
         targets,
 
         frame_state,
@@ -300,7 +298,6 @@ pub fn prepare_repeatable_quad(
     transform: &mut QuadTransformState,
 
     spatial_tree: &SpatialTree,
-    pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
     frame_state: &mut FrameBuildingState,
@@ -357,7 +354,6 @@ pub fn prepare_repeatable_quad(
             clips,
             transform,
             spatial_tree,
-            pic_context,
             targets,
             frame_state,
             scratch,
@@ -450,7 +446,6 @@ pub fn prepare_repeatable_quad(
             clips,
             transform,
             spatial_tree,
-            pic_context,
             targets,
             frame_state,
             scratch,
@@ -462,7 +457,7 @@ pub fn prepare_repeatable_quad(
     // Repeat by duplicating the primitive.
 
     let visible_rect = compute_surface_visible_rect(
-        &frame_state.surfaces[pic_context.surface_index.0].clipping_rect,
+        &clips.surface_clip_rect(),
         clips.coverage_rect(),
         transform,
         &desc.bounds,
@@ -504,7 +499,6 @@ pub fn prepare_repeatable_quad(
             clips,
             transform,
             spatial_tree,
-            pic_context,
             targets,
             frame_state,
             scratch,
@@ -521,7 +515,6 @@ pub fn prepare_border_nine_patch(
     transform: &mut QuadTransformState,
 
     spatial_tree: &SpatialTree,
-    pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
     frame_state: &mut FrameBuildingState,
@@ -617,7 +610,6 @@ pub fn prepare_border_nine_patch(
 
             transform,
             spatial_tree,
-            pic_context,
             targets,
 
             frame_state,
@@ -635,7 +627,6 @@ fn prepare_quad_impl(
 
     transform: &mut QuadTransformState,
     spatial_tree: &SpatialTree,
-    pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
     frame_state: &mut FrameBuildingState,
@@ -749,12 +740,10 @@ fn prepare_quad_impl(
         return;
     }
 
-    let surface = &frame_state.surfaces[pic_context.surface_index.0];
-
     // Rounding is important here because clipped_surface_rect.min may be used as the origin
     // of render tasks. Fractional values would introduce fractional offsets in the render tasks.
     let mut clipped_surface_rect = clips.coverage_rect()
-        .intersection_unchecked(&surface.clipping_rect)
+        .intersection_unchecked(&clips.surface_clip_rect())
         .round();
 
     if let Some(t) = transform.as_2d_scale_offset() {

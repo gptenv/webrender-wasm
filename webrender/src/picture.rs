@@ -2707,10 +2707,11 @@ pub fn prepare_picture_primitive(
     // are applied here by the quad path, and are the only clips
     // `composite_clips` holds.
     let needs_mask = !composite_clips.is_empty();
+    let surface = &frame_state.surfaces[pic_context.surface_index.0];
     composite_clips.set_bounds(
         prim_info.clip_chain.local_clip_rect,
-        frame_state.surfaces[pic_context.surface_index.0]
-            .map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect),
+        surface.map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect),
+        surface.clipping_rect,
         needs_mask,
     );
     let composite_clips = &composite_clips;
@@ -2802,7 +2803,6 @@ pub fn prepare_picture_primitive(
                 composite_clips,
                 transform,
                 frame_context.spatial_tree,
-                pic_context,
                 targets,
                 frame_state,
                 scratch,
@@ -2871,7 +2871,6 @@ pub fn prepare_picture_primitive(
         composite_clips,
         transform,
         frame_context.spatial_tree,
-        pic_context,
         targets,
         frame_state,
         scratch,

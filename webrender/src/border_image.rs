@@ -7,7 +7,7 @@ use api::{ColorF, ImageBufferKind, RepeatMode};
 use api::units::*;
 use crate::border::compute_border_repetition_1d;
 use crate::command_buffer::CommandBufferIndex;
-use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
+use crate::frame_builder::{FrameBuildingContext, FrameBuildingState};
 use crate::pattern::{PatternBuilder, PatternBuilderState};
 use crate::pattern::image::ImagePattern;
 use crate::quad::{QuadDescriptor, QuadTransformState, prepare_repeatable_quad};
@@ -25,7 +25,6 @@ pub fn prepare_border_image_nine_patch(
     transform: &mut QuadTransformState,
 
     frame_context: &FrameBuildingContext,
-    pic_context: &PictureContext,
     targets: &[CommandBufferIndex],
 
     frame_state: &mut FrameBuildingState,
@@ -75,7 +74,6 @@ pub fn prepare_border_image_nine_patch(
             clips,
             transform,
             frame_context.spatial_tree,
-            pic_context,
             targets,
             frame_state,
             scratch,

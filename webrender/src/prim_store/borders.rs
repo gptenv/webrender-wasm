@@ -11,7 +11,7 @@ use crate::pattern::image::ImagePattern;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
 use crate::quad_clip::QuadClipStack;
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent, to_cache_size};
-use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext};
+use crate::frame_builder::{FrameBuildingContext, FrameBuildingState};
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
@@ -44,7 +44,6 @@ impl NormalBorderData {
         clips: &QuadClipStack,
         quad_transform: &mut QuadTransformState,
         frame_context: &FrameBuildingContext,
-        pic_context: &PictureContext,
         targets: &[CommandBufferIndex],
         frame_state: &mut FrameBuildingState,
         scratch: &mut PrimitiveScratchBuffer,
@@ -178,7 +177,6 @@ impl NormalBorderData {
                     clips,
                     quad_transform,
                     frame_context.spatial_tree,
-                    pic_context,
                     targets,
                     frame_state,
                     scratch,
@@ -285,7 +283,6 @@ impl NormalBorderData {
                 clips,
                 quad_transform,
                 frame_context.spatial_tree,
-                pic_context,
                 targets,
                 frame_state,
                 scratch,
