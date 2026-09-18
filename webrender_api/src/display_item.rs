@@ -690,17 +690,19 @@ pub enum ExtendMode {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct Gradient {
-    pub start_point: LayoutPoint,
-    pub end_point: LayoutPoint,
+    /// Relative to the primitive bounds.
+    pub start: LayoutVector2D,
+    /// Relative to the primitive bounds.
+    pub end: LayoutVector2D,
     pub extend_mode: ExtendMode,
 } // IMPLICIT: stops: Vec<GradientStop>
 
 impl Gradient {
     pub fn is_valid(&self) -> bool {
-        self.start_point.x.is_finite() &&
-            self.start_point.y.is_finite() &&
-            self.end_point.x.is_finite() &&
-            self.end_point.y.is_finite()
+        self.start.x.is_finite() &&
+            self.start.y.is_finite() &&
+            self.end.x.is_finite() &&
+            self.end.y.is_finite()
     }
 }
 
@@ -729,7 +731,8 @@ pub struct GradientStop {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct RadialGradient {
-    pub center: LayoutPoint,
+    /// Relative to the primitive bounds.
+    pub center: LayoutVector2D,
     pub radius: LayoutSize,
     pub start_offset: f32,
     pub end_offset: f32,
@@ -747,7 +750,8 @@ impl RadialGradient {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct ConicGradient {
-    pub center: LayoutPoint,
+    /// Relative to the primitive bounds.
+    pub center: LayoutVector2D,
     pub angle: f32,
     pub start_offset: f32,
     pub end_offset: f32,

@@ -1510,8 +1510,8 @@ impl<'a> SceneBuilder<'a> {
 
                 if let Some(prim_key_kind) = linear_gradient_prim(
                     layout.rect,
-                    info.gradient.start_point,
-                    info.gradient.end_point,
+                    info.gradient.start,
+                    info.gradient.end,
                     read_gradient_stops(item.gradient_stops()),
                     info.gradient.extend_mode,
                     info.tile_size,
@@ -2756,8 +2756,8 @@ impl<'a> SceneBuilder<'a> {
                     NinePatchBorderSource::Gradient(gradient) => {
                         let prim = match linear_gradient_prim(
                             info.rect,
-                            gradient.start_point,
-                            gradient.end_point,
+                            gradient.start,
+                            gradient.end,
                             read_gradient_stops(gradient_stops),
                             gradient.extend_mode,
                             LayoutSize::new(border.height as f32, border.width as f32),

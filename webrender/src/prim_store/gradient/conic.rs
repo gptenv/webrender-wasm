@@ -39,7 +39,7 @@ impl InternDebug for ConicGradientKey {}
 pub struct ConicGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
-    pub center: LayoutPoint,
+    pub center: LayoutVector2D,
     pub params: ConicGradientParams,
     /// Per-axis fraction of `common.prim_size` covered by one tile of the
     /// gradient pattern. Multiply by `common.prim_size` at use to recover the
@@ -58,13 +58,8 @@ impl PatternBuilder for ConicGradientTemplate {
         _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        // ConicGradientTemplate stores the center point relative to the primitive
-        // origin, but the shader works with start/end points in "proper" layout
-        // coordinates (relative to the primitive's spatial node).
-        let center = pattern_rect.min + self.center.to_vector();
-
         conic_gradient_pattern(
-            center,
+            pattern_rect.min + self.center,
             self.params.angle,
             self.params.start_offset,
             self.params.end_offset,

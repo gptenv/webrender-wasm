@@ -42,7 +42,7 @@ pub struct RadialGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
     pub params: RadialGradientParams,
-    pub center: LayoutPoint,
+    pub center: LayoutVector2D,
     /// Per-axis fraction of `common.prim_size` covered by one tile of the
     /// gradient pattern. Multiply by `common.prim_size` at use to recover the
     /// absolute stretch_size.
@@ -60,13 +60,8 @@ impl PatternBuilder for RadialGradientTemplate {
         _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        // RadialGradientTemplate stores the center point relative to the primitive
-        // origin, but the shader works with start/end points in "proper" layout
-        // coordinates (relative to the primitive's spatial node).
-        let center = pattern_rect.min + self.center.to_vector();
-
         radial_gradient_pattern(
-            center,
+            pattern_rect.min + self.center,
             self.params.start_radius,
             self.params.end_radius,
             self.params.ratio_xy,

@@ -9,7 +9,7 @@
 //! Linear gradients are rendered as quads with the gradient pattern (ps_quad_gradient).
 
 use euclid::approxeq::ApproxEq;
-use euclid::point2;
+use euclid::vec2;
 use api::{ExtendMode, GradientStop};
 use api::units::*;
 use crate::pattern::gradient::linear_gradient_pattern;
@@ -37,8 +37,9 @@ impl InternDebug for LinearGradientKey {}
 pub struct LinearGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
-    pub start_point: LayoutPoint,
-    pub end_point: LayoutPoint,
+    // Relative to the primitive's pattern rect.
+    pub start_point: LayoutVector2D,
+    pub end_point: LayoutVector2D,
     /// Per-axis fraction of `common.prim_size` covered by one tile of the
     /// gradient pattern. Multiply by `common.prim_size` at use to recover the
     /// absolute stretch_size.
@@ -66,8 +67,8 @@ impl PatternBuilder for LinearGradientTemplate {
         // primitive origin, but the shader works with start/end points in "proper"
         // layout coordinates (relative to the primitive's spatial node).
         linear_gradient_pattern(
-            pattern_rect.min + start.to_vector(),
-            pattern_rect.min + end.to_vector(),
+            pattern_rect.min + start,
+            pattern_rect.min + end,
             self.extend_mode,
             &self.stops,
             state.frame_gpu_data,
@@ -95,8 +96,8 @@ pub fn linear_gradient_decomposes(
     prim_rect: &LayoutRect,
     tile_size: LayoutSize,
     tile_spacing: LayoutSize,
-    start: LayoutPoint,
-    end: LayoutPoint,
+    start: LayoutVector2D,
+    end: LayoutVector2D,
     extend_mode: ExtendMode,
     stops: &[GradientStop],
     enable_dithering: bool,
@@ -145,11 +146,11 @@ pub fn linear_gradient_decomposes(
 pub fn decompose_axis_aligned_gradient(
     prim_rect: &LayoutRect,
     tile_size: LayoutSize,
-    start: LayoutPoint,
-    end: LayoutPoint,
+    start: LayoutVector2D,
+    end: LayoutVector2D,
     stops: &[GradientStop],
     clip_rect: &LayoutRect,
-    mut callback: impl FnMut(&LayoutRect, LayoutPoint, LayoutPoint, [GradientStop; 2], EdgeMask),
+    mut callback: impl FnMut(&LayoutRect, LayoutVector2D, LayoutVector2D, [GradientStop; 2], EdgeMask),
 ) {
     debug_assert!(!stops.is_empty());
 
@@ -166,7 +167,7 @@ pub fn decompose_axis_aligned_gradient(
     let adjust_size = &mut |size: &mut LayoutSize| {
         if vertical { swap(&mut size.width, &mut size.height); }
     };
-    let adjust_point = &mut |p: &mut LayoutPoint| {
+    let adjust_vector = &mut |p: &mut LayoutVector2D| {
         if vertical { swap(&mut p.x, &mut p.y); }
     };
 
@@ -181,8 +182,8 @@ pub fn decompose_axis_aligned_gradient(
     let mut tile_size = tile_size;
 
     adjust_rect(&mut prim_rect);
-    adjust_point(&mut start);
-    adjust_point(&mut end);
+    adjust_vector(&mut start);
+    adjust_vector(&mut end);
     adjust_size(&mut tile_size);
 
     // `clip_rect` stays in the original (un-swapped) space — segment_rect
@@ -276,11 +277,11 @@ pub fn decompose_axis_aligned_gradient(
         segment_rect.min.x = rect_start;
         segment_rect.max.x = rect_end;
 
-        let mut seg_start = point2(0.0, 0.0);
-        let mut seg_end = point2(segment_length, 0.0);
+        let mut seg_start = vec2(0.0, 0.0);
+        let mut seg_end = vec2(segment_length, 0.0);
 
-        adjust_point(&mut seg_start);
-        adjust_point(&mut seg_end);
+        adjust_vector(&mut seg_start);
+        adjust_vector(&mut seg_end);
         adjust_rect(&mut segment_rect);
 
         let origin_before_clip = segment_rect.min;
@@ -326,8 +327,8 @@ impl From<LinearGradientKey> for LinearGradientTemplate {
         // should be drawn in.
         let stops_opacity = PrimitiveOpacity::from_alpha(min_alpha);
 
-        let start_point = LayoutPoint::new(item.start_point.x, item.start_point.y);
-        let end_point = LayoutPoint::new(item.end_point.x, item.end_point.y);
+        let start_point = LayoutVector2D::new(item.start_point.x, item.start_point.y);
+        let end_point = LayoutVector2D::new(item.end_point.x, item.end_point.y);
         let tile_spacing: LayoutSize = item.tile_spacing.into();
         let stretch_ratio: LayoutSize = item.stretch_ratio.into();
 

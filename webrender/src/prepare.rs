@@ -1394,8 +1394,8 @@ fn adjust_mask_scale_for_max_size(device_rect: DeviceIntRect, device_pixel_scale
 /// stop colors (in segment-local coords); `build` translates start/end into
 /// the prim's spatial-node space by adding `ctx.prim_origin`.
 struct LinearGradientSegmentPattern {
-    start: LayoutPoint,
-    end: LayoutPoint,
+    start: LayoutVector2D,
+    end: LayoutVector2D,
     stops: [GradientStop; 2],
 }
 
@@ -1406,10 +1406,9 @@ impl PatternBuilder for LinearGradientSegmentPattern {
         _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        let prim_origin = pattern_rect.min;
         linear_gradient_pattern(
-            prim_origin + self.start.to_vector(),
-            prim_origin + self.end.to_vector(),
+            pattern_rect.min + self.start,
+            pattern_rect.min + self.end,
             ExtendMode::Clamp,
             &self.stops,
             state.frame_gpu_data,

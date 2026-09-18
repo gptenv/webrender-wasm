@@ -11,7 +11,7 @@
 //! interning in the `DisplayListBuilder`; `webrender` re-exports them from their
 //! former homes. Not part of the public API surface.
 
-use crate::units::{LayoutRect, LayoutSize, LayoutPoint, LayoutVector2D, RectExt};
+use crate::units::{LayoutRect, LayoutSize, LayoutVector2D, RectExt};
 use crate::{ColorU, ExtendMode};
 use crate::interned_prims::{ConicGradient, LinearGradient, RadialGradient};
 use crate::key_types::{
@@ -184,8 +184,8 @@ pub fn optimize_linear_gradient(
     tile_size: &mut LayoutSize,
     mut tile_spacing: LayoutSize,
     clip_rect: &LayoutRect,
-    start: &mut LayoutPoint,
-    end: &mut LayoutPoint,
+    start: &mut LayoutVector2D,
+    end: &mut LayoutVector2D,
 ) {
     simplify_repeated_primitive(&tile_size, &mut tile_spacing, prim_rect);
 
@@ -233,7 +233,7 @@ pub fn optimize_linear_gradient(
 pub fn optimize_radial_gradient(
     prim_rect: &mut LayoutRect,
     stretch_size: &mut LayoutSize,
-    center: &mut LayoutPoint,
+    center: &mut LayoutVector2D,
     tile_spacing: &mut LayoutSize,
     aa_mask: &mut EdgeMask,
     clip_rect: &LayoutRect,
@@ -257,8 +257,8 @@ pub fn optimize_radial_gradient(
     }
 
     // Bounding box of the "interesting" part of the gradient.
-    let min = prim_rect.min + center.to_vector() - radius.to_vector() * end_offset;
-    let max = prim_rect.min + center.to_vector() + radius.to_vector() * end_offset;
+    let min = prim_rect.min + *center - radius.to_vector() * end_offset;
+    let max = prim_rect.min + *center + radius.to_vector() * end_offset;
 
     // The (non-repeated) gradient primitive rect.
     let gradient_rect = LayoutRect::from_origin_and_size(
@@ -415,8 +415,8 @@ pub fn optimize_radial_gradient(
 /// rather than the simplified rect - both as the scene builder had it.
 pub fn linear_gradient_prim(
     prim_rect: LayoutRect,
-    start_point: LayoutPoint,
-    end_point: LayoutPoint,
+    start_point: LayoutVector2D,
+    end_point: LayoutVector2D,
     stops: Vec<GradientStopKey>,
     extend_mode: ExtendMode,
     stretch_size: LayoutSize,
@@ -476,7 +476,7 @@ pub fn linear_gradient_prim(
 /// the two quirks this preserves.
 pub fn conic_gradient_prim(
     prim_rect: LayoutRect,
-    center: LayoutPoint,
+    center: LayoutVector2D,
     angle: f32,
     start_offset: f32,
     end_offset: f32,
@@ -507,7 +507,7 @@ pub fn conic_gradient_prim(
 /// the two quirks this preserves.
 pub fn radial_gradient_prim(
     prim_rect: LayoutRect,
-    center: LayoutPoint,
+    center: LayoutVector2D,
     start_radius: f32,
     end_radius: f32,
     ratio_xy: f32,
