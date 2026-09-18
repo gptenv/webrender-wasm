@@ -55,7 +55,6 @@ impl PatternBuilder for LinearGradientTemplate {
     fn build(
         &self,
         pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         let (start, end) = if self.reverse_stops {

@@ -146,7 +146,6 @@ pub trait PatternBuilder {
     fn build(
         &self,
         pattern_rect: &LayoutRect,
-        sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern;
 }
@@ -226,7 +225,6 @@ impl PatternBuilder for ColorF {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern::color(*self)

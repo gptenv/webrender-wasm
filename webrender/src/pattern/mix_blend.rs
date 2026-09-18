@@ -28,7 +28,6 @@ impl PatternBuilder for MixBlendPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // See fetch in ps_quad_mix_blend.glsl: the source texture-cache rect,
@@ -63,7 +62,6 @@ impl PatternBuilder for FixedFunctionMixBlendPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern::texture(self.src_task_id, false).with_blend_mode(self.blend_mode)

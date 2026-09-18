@@ -28,7 +28,6 @@ impl PatternBuilder for BlendFilterPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         _state: &mut PatternBuilderState,
     ) -> Pattern {
         Pattern {

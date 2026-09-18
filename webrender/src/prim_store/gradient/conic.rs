@@ -55,7 +55,6 @@ impl PatternBuilder for ConicGradientTemplate {
     fn build(
         &self,
         pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         conic_gradient_pattern(

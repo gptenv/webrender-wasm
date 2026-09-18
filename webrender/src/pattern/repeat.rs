@@ -52,7 +52,6 @@ impl PatternBuilder for RepeatedPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         repeated_pattern(self, state.frame_gpu_data)

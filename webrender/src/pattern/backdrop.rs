@@ -27,7 +27,6 @@ impl PatternBuilder for BackdropPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // See fetch in ps_quad_backdrop.glsl.

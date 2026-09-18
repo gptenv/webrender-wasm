@@ -155,7 +155,6 @@ impl PatternBuilder for YuvPattern {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         let mat = YuvColorMatrix::new(self.channel_bit_depth, self.color_space, self.format);

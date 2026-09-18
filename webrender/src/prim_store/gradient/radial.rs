@@ -57,7 +57,6 @@ impl PatternBuilder for RadialGradientTemplate {
     fn build(
         &self,
         pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         radial_gradient_pattern(

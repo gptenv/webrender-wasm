@@ -1379,7 +1379,6 @@ impl PatternBuilder for LinearGradientSegmentPattern {
     fn build(
         &self,
         pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         linear_gradient_pattern(

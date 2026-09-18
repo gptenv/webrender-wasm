@@ -39,7 +39,6 @@ impl PatternBuilder for BoxShadowPatternData {
     fn build(
         &self,
         _pattern_rect: &LayoutRect,
-        _sub_rect: Option<DeviceRect>,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         let superellipse = !self.element_radius.shapes_all_round();
