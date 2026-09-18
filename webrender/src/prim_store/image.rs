@@ -332,11 +332,10 @@ pub fn prepare_image_quads(
             // thing.
             let active_rect = image_properties.visible_rect;
             let visible_rect = compute_surface_visible_rect(
-                &frame_state.surfaces[pic_context.surface_index.0],
+                &frame_state.surfaces[pic_context.surface_index.0].clipping_rect,
                 clips.coverage_rect(),
-                quad_transform.prim_spatial_node_index(),
+                quad_transform,
                 &tight_clip_rect,
-                frame_context.spatial_tree,
             );
 
             let effective_stretch_size = image_data.stretch_size.resolve(prim_rect);

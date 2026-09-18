@@ -28,7 +28,7 @@ use crate::segment::EdgeMask;
 use crate::space::SpaceMapper;
 use crate::spatial_tree::{CoordinateSpaceMapping, SpatialNodeIndex, SpatialTree};
 use crate::transform::GpuTransformId;
-use crate::util::{extract_inner_rect_k, MaxRect, ScaleOffset};
+use crate::util::{extract_inner_rect_k, MatrixHelpers, MaxRect, ScaleOffset};
 use crate::visibility::compute_surface_visible_rect;
 
 /// This type reflects the unfortunate situation with quad coordinates where we
@@ -179,6 +179,27 @@ impl QuadTransformState {
 
     pub fn prim_spatial_node_index(&self) -> SpatialNodeIndex {
         self.prim_spatial_node
+    }
+
+    /// Map a rect in the target surface's device space back into the
+    /// primitive's local space, or `None` if the transform cannot be inverted.
+    pub fn unmap_rect(&self, device_rect: &DeviceRect) -> Option<LayoutRect> {
+        if let Some(ref local_to_device) = self.as_scale_offset {
+            return Some(local_to_device.unmap_rect(device_rect));
+        }
+
+        let inv_scale = 1.0 / self.device_pixel_scale.0;
+        let raster_rect: LayoutRect = device_rect.cast_unit().scale(inv_scale, inv_scale);
+
+        match self.map_prim_to_raster {
+            CoordinateSpaceMapping::Local => Some(raster_rect),
+            CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => {
+                Some(scale_offset.unmap_rect(&raster_rect))
+            }
+            CoordinateSpaceMapping::Transform(ref transform) => {
+                transform.inverse_rect_footprint(&raster_rect)
+            }
+        }
     }
 
     pub fn raster_spatial_node_index(&self) -> SpatialNodeIndex {
@@ -441,11 +462,10 @@ pub fn prepare_repeatable_quad(
     // Repeat by duplicating the primitive.
 
     let visible_rect = compute_surface_visible_rect(
-        &frame_state.surfaces[pic_context.surface_index.0],
+        &frame_state.surfaces[pic_context.surface_index.0].clipping_rect,
         clips.coverage_rect(),
-        transform.prim_spatial_node_index(),
+        transform,
         &desc.bounds,
-        spatial_tree,
     );
 
     let stride = stretch_size + tile_spacing;

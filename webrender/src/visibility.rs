@@ -34,6 +34,7 @@ use api::units::*;
 use crate::clip::ClipStore;
 use crate::composite::CompositeState;
 use crate::profiler::{self, TransactionProfile};
+use crate::quad::QuadTransformState;
 use crate::renderer::GpuBufferBuilder;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::clip::{snap_local_clip_rect, ClipChainInstance, ClipTree, ClipNodeId};
@@ -56,7 +57,6 @@ use crate::resource_cache::ResourceCache;
 use crate::scene::SceneProperties;
 use crate::scene_debug::SceneDebugOverride;
 use crate::space::{SpaceMapper, SpaceSnapper};
-use crate::util::MaxRect;
 
 pub struct FrameVisibilityContext<'a> {
     pub spatial_tree: &'a SpatialTree,
@@ -636,25 +636,16 @@ pub fn update_prim_visibility(
 /// `bounds` is the primitive's own extent: the result never exceeds it, and it
 /// is the fallback if the primitive's transform cannot be inverted.
 pub fn compute_surface_visible_rect(
-    surface: &SurfaceInfo,
+    surface_clipping_rect: &DeviceRect,
     device_coverage_rect: DeviceRect,
-    prim_spatial_node_index: SpatialNodeIndex,
+    transform: &QuadTransformState,
     bounds: &LayoutRect,
-    spatial_tree: &SpatialTree,
 ) -> LayoutRect {
-    let map_prim_to_surface: SpaceMapper<LayoutPixel, PicturePixel> = SpaceMapper::new_with_target(
-        surface.surface_spatial_node_index,
-        prim_spatial_node_index,
-        PictureRect::max_rect(),
-        spatial_tree,
-    );
-
     // The intersection happens in device space so that a `max_rect` clipping
     // rect never has to be mapped: scaling it would overflow to infinities.
-    surface.clipping_rect
+    surface_clipping_rect
         .intersection(&device_coverage_rect)
-        .map(|rect| surface.device_to_picture_rect(&rect))
-        .and_then(|rect| map_prim_to_surface.unmap(&rect))
+        .and_then(|rect| transform.unmap_rect(&rect))
         .unwrap_or(*bounds)
         .intersection_unchecked(bounds)
 }
