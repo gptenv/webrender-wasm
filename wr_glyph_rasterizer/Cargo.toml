@@ -58,3 +58,8 @@ objc = "0.2"
 # native-font-handle plumbing removed (the Worker has no OS font service).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 swash = "0.2"
+# Decompresses WOFF/WOFF2 to plain SFNT before handing bytes to swash, which
+# only recognizes raw TrueType/OpenType/collection data. Pure Rust (flate2's
+# miniz_oxide backend for WOFF1, brotli-decompressor for WOFF2), verified to
+# build for wasm32-unknown-unknown with no C toolchain involved.
+wuff = "0.2"

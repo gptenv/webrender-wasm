@@ -10,6 +10,17 @@
 //! into bitmaps using `swash`, a pure-Rust font rasterizer, per the design
 //! in `docs/wasm-rendering.md` in the servo-wasm tree.
 //!
+//! swash only parses plain SFNT data (TrueType/OpenType/collection), but
+//! most real `@font-face` rules on the actual web serve WOFF or WOFF2, so
+//! `add_raw_font` unwraps those container formats via `wuff` (pure Rust;
+//! flate2/miniz_oxide for WOFF1, brotli-decompressor for WOFF2) before the
+//! bytes ever reach swash. Desktop Servo doesn't do this decompression
+//! itself either way -- it hands bytes straight to FreeType/CoreText/
+//! DirectWrite and lets those libraries sort it out, and that support is
+//! inconsistent there (this fork's `freetype-sys` isn't built with brotli,
+//! so WOFF2 likely doesn't work on desktop Linux today) -- so this isn't
+//! about matching desktop, just about actually rendering real pages.
+//!
 //! This is ported from the real swash backend that already exists on this
 //! fork's `swash-backend`/`0.67-swash` branches (see
 //! `wr_glyph_rasterizer/src/backend/swash/font.rs` there), adapted to the
@@ -64,6 +75,21 @@ impl FontContext {
         if self.fonts.contains_key(font_key) {
             return;
         }
+        // swash only recognizes plain SFNT (TrueType/OpenType/collection)
+        // data, but nearly all real `@font-face` rules serve WOFF/WOFF2, so
+        // unwrap those container formats to SFNT before anything else sees
+        // the bytes. See the module-level doc comment.
+        let bytes = match bytes.get(0..4) {
+            Some(b"wOFF") => Arc::new(
+                wuff::decompress_woff1(&bytes)
+                    .unwrap_or_else(|err| panic!("WOFF decompression failed: {:?}", err)),
+            ),
+            Some(b"wOF2") => Arc::new(
+                wuff::decompress_woff2(&bytes)
+                    .unwrap_or_else(|err| panic!("WOFF2 decompression failed: {:?}", err)),
+            ),
+            _ => bytes,
+        };
         // Validate eagerly so a bad font fails at load time, matching the
         // other backends' early-failure behavior in `add_raw_font`.
         if FontRef::from_index(&bytes, index as usize).is_none() {
