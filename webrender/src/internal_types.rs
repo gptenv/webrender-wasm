@@ -26,7 +26,23 @@ use std::f32;
 use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{UNIX_EPOCH, SystemTime};
+use std::time::{Duration, UNIX_EPOCH, SystemTime};
+
+#[cfg(target_arch = "wasm32")]
+fn worker_wall_clock() -> SystemTime {
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        #[link_name = "worker_unix_time_now_ns"]
+        fn worker_unix_time_now_ns() -> u64;
+    }
+
+    UNIX_EPOCH + Duration::from_nanos(unsafe { worker_unix_time_now_ns() })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn worker_wall_clock() -> SystemTime {
+    SystemTime::now()
+}
 use peek_poke::PeekPoke;
 
 #[cfg(any(feature = "capture", feature = "replay"))]
@@ -157,7 +173,7 @@ impl FrameStamp {
     pub fn first(document_id: DocumentId) -> Self {
         FrameStamp {
             id: FrameId::first(),
-            time: SystemTime::now(),
+            time: worker_wall_clock(),
             document_id,
         }
     }
@@ -165,7 +181,7 @@ impl FrameStamp {
     /// Advances to a new frame.
     pub fn advance(&mut self) {
         self.id.advance();
-        self.time = SystemTime::now();
+        self.time = worker_wall_clock();
     }
 
     /// An invalid sentinel FrameStamp.
@@ -855,4 +871,3 @@ impl LayoutPrimitiveInfo {
         }
     }
 }
-
