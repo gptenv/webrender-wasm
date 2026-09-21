@@ -45,6 +45,10 @@ pub mod platform {
     pub use crate::platform::unix::font;
     #[cfg(target_os = "windows")]
     pub use crate::platform::windows::font;
+    // wasm32-unknown-unknown reports an empty target_os, so it cannot share
+    // the `unix` arm above even though it also has no native font service.
+    #[cfg(target_arch = "wasm32")]
+    pub use crate::platform::wasm::font;
 
     #[cfg(any(target_os = "ios", target_os = "macos"))]
     pub mod macos {
@@ -56,6 +60,10 @@ pub mod platform {
     }
     #[cfg(target_os = "windows")]
     pub mod windows {
+        pub mod font;
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub mod wasm {
         pub mod font;
     }
 }

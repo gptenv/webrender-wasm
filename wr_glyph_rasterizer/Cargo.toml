@@ -50,3 +50,11 @@ core-foundation = "0.9.2"
 core-graphics = "0.23"
 core-text = { version = "20.1", default-features = false }
 objc = "0.2"
+
+# Worker/wasm32 glyph backend. See src/platform/wasm/font.rs and
+# /mnt/claudevm/servo-wasm/docs/wasm-rendering.md. Ported from the real
+# swash backend on branches swash-backend/0.67-swash of this same fork,
+# adapted to the current (0.70) FontInstance/RasterizedGlyph API and with
+# native-font-handle plumbing removed (the Worker has no OS font service).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+swash = "0.2"
