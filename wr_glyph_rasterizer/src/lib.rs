@@ -27,6 +27,7 @@ extern crate malloc_size_of_derive;
 extern crate tracy_rs;
 #[macro_use]
 extern crate log;
+#[cfg(not(target_arch = "wasm32"))]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]

@@ -256,6 +256,7 @@ pub struct RenderTaskGraph {
     pub passes: FrameVec<Pass>,
 
     /// Current frame id, used for debug validation
+    #[cfg(any(debug_assertions, test, feature = "capture", feature = "replay"))]
     frame_id: FrameId,
 
     /// GPU specific data for each task that is made available to shaders
@@ -435,6 +436,7 @@ impl RenderTaskGraphBuilder {
             sub_rects: memory.new_vec(),
             passes: memory.new_vec(),
             task_data: memory.new_vec_with_capacity(task_count),
+            #[cfg(any(debug_assertions, test, feature = "capture", feature = "replay"))]
             frame_id: self.frame_id,
             #[cfg(test)]
             surface_count: 0,
@@ -962,6 +964,7 @@ impl RenderTaskGraph {
             sub_tasks: allocator.clone().new_vec(),
             sub_rects: allocator.clone().new_vec(),
             passes: allocator.clone().new_vec(),
+            #[cfg(any(debug_assertions, test, feature = "capture", feature = "replay"))]
             frame_id: FrameId::INVALID,
             task_data: allocator.clone().new_vec(),
             surface_count: 0,
