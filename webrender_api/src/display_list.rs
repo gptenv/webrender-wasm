@@ -26,6 +26,24 @@ use crate::image::{ColorDepth, ImageKey};
 use crate::units::*;
 
 
+/// Monotonic nanoseconds for display list build statistics. On the Worker
+/// WASM target, `zeitstempel` falls back to `std::time::Instant`, which panics
+/// on wasm32-unknown-unknown, so read the Worker host's monotonic clock.
+#[cfg(target_arch = "wasm32")]
+fn builder_clock_ns() -> u64 {
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        #[link_name = "worker_monotonic_now_ns"]
+        fn worker_monotonic_now_ns() -> u64;
+    }
+    unsafe { worker_monotonic_now_ns() }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn builder_clock_ns() -> u64 {
+    zeitstempel::now()
+}
+
 // We don't want to push a long text-run. If a text-run is too long, split it into several parts.
 // This needs to be set to (renderer::MAX_VERTEX_TEXTURE_WIDTH - VECS_PER_TEXT_RUN) * 2
 pub const MAX_TEXT_RUN_LENGTH: usize = 2040;
@@ -1830,7 +1848,7 @@ impl DisplayListBuilder {
     pub fn begin(&mut self) {
         assert_eq!(self.state, BuildState::Idle);
         self.state = BuildState::Build;
-        self.builder_start_time = zeitstempel::now();
+        self.builder_start_time = builder_clock_ns();
         self.reset();
     }
 
@@ -1862,7 +1880,7 @@ impl DisplayListBuilder {
             &mut self.payload,
             DisplayListPayload::new(next_capacity),
         );
-        let end_time = zeitstempel::now();
+        let end_time = builder_clock_ns();
 
         self.state = BuildState::Idle;
 
