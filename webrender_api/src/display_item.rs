@@ -1960,21 +1960,58 @@ impl YuvFormat {
     }
 }
 
+/// Servo/servo-wasm extension for CSS `mask-composite`: how a `mask-image`
+/// layer combines with the mask layers below it. `Add` (the `Default`) is
+/// the CSS default and matches upstream WebRender's only previously
+/// supported behavior (the sole mask layer it ever handled).
+/// <https://drafts.fxtf.org/css-masking-1/#the-mask-composite>
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
+pub enum MaskComposite {
+    Add = 0,
+    Subtract = 1,
+    Intersect = 2,
+    Exclude = 3,
+}
+
+/// Servo/servo-wasm extension for a `mask-image` layer that is a CSS
+/// gradient rather than a raster image (`mask-image: linear-gradient(...)`
+/// etc.), reusing the same gradient description WebRender already uses for
+/// painting `Gradient`/`RadialGradient`/`ConicGradient` display items. Its
+/// stops are conveyed the same way theirs are: a `SetGradientStops` marker
+/// item pushed immediately before the `ImageMaskClip` item, read back via
+/// `DisplayItemRef::gradient_stops()`. `None` (the `Default`) means this
+/// layer is a raster image (`ImageMask::image`) instead.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub enum MaskGradient {
+    None,
+    Linear(Gradient),
+    Radial(RadialGradient),
+    Conic(ConicGradient),
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct ImageMask {
+    /// Ignored when `gradient` is not `MaskGradient::None`.
     pub image: ImageKey,
     pub rect: LayoutRect,
     /// Servo/servo-wasm extension for CSS `mask-image`: the size of one tile
-    /// of `image` within `rect`. Equal to `rect.size()` for a mask that does
-    /// not repeat; smaller than it when `mask-repeat` tiles the image across
-    /// `rect`. Zero (the `Default` value) is treated as `rect.size()`.
+    /// of `image` (or of the gradient) within `rect`. Equal to `rect.size()`
+    /// for a mask that does not repeat; smaller than it when `mask-repeat`
+    /// tiles the image across `rect`. Zero (the `Default` value) is treated
+    /// as `rect.size()`.
     pub tile_size: LayoutSize,
     /// Servo/servo-wasm extension for CSS `mask-mode: luminance`: use the
-    /// mask image's luminance (rather than its alpha channel) as the mask.
-    /// `false` (the `Default` value) matches upstream WebRender's only
-    /// previously supported behavior (alpha).
+    /// mask's luminance (rather than its alpha channel) as the mask. `false`
+    /// (the `Default` value) matches upstream WebRender's only previously
+    /// supported behavior (alpha).
     pub luminance: bool,
+    /// Servo/servo-wasm extension: see [`MaskComposite`].
+    pub composite: MaskComposite,
+    /// Servo/servo-wasm extension: see [`MaskGradient`].
+    pub gradient: MaskGradient,
 }
 
 impl ImageMask {
@@ -2300,6 +2337,8 @@ impl_default_for_enums! {
     TransformStyle => Flat,
     RasterSpace => Local(f32::default()),
     MixBlendMode => Normal,
+    MaskComposite => Add,
+    MaskGradient => None,
     ImageRendering => Auto,
     AlphaType => Alpha,
     YuvColorSpace => Rec601,

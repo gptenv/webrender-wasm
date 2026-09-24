@@ -831,6 +831,8 @@ impl YamlFrameReader {
             rect: image_rect,
             tile_size: image_rect.size(),
             luminance: false,
+            composite: MaskComposite::Add,
+            gradient: MaskGradient::None,
         })
     }
 
