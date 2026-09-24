@@ -611,6 +611,7 @@ pub fn create_webrender_instance(
 
     let sb_fonts = fonts.clone();
 
+    #[cfg(not(target_arch = "wasm32"))]
     thread::Builder::new().name(scene_thread_name.clone()).spawn(move || {
         register_thread_with_profiler(scene_thread_name.clone());
         profiler::register_thread(&scene_thread_name);
@@ -629,12 +630,14 @@ pub fn create_webrender_instance(
 
     let low_priority_scene_tx = if options.support_low_priority_transactions {
         let (low_priority_scene_tx, low_priority_scene_rx) = unbounded_channel();
+        #[cfg(not(target_arch = "wasm32"))]
         let lp_builder = LowPrioritySceneBuilderThread {
             rx: low_priority_scene_rx,
             tx: scene_tx.clone(),
             tile_pool: api::BlobTilePool::new(),
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         thread::Builder::new().name(lp_scene_thread_name.clone()).spawn(move || {
             register_thread_with_profiler(lp_scene_thread_name.clone());
             profiler::register_thread(&lp_scene_thread_name);
@@ -675,6 +678,7 @@ pub fn create_webrender_instance(
     let rb_scene_tx = scene_tx.clone();
     let rb_fonts = fonts.clone();
     let enable_multithreading = options.enable_multithreading;
+    #[cfg(not(target_arch = "wasm32"))]
     thread::Builder::new().name(rb_thread_name.clone()).spawn(move || {
         if let Some(hooks) = render_backend_hooks {
             hooks.init_thread();
@@ -724,6 +728,23 @@ pub fn create_webrender_instance(
         backend.run();
         profiler::unregister_thread();
     })?;
+
+    // Cloudflare Workers provide a single-threaded wasm execution environment.
+    // Keep the renderer and its channels alive for the DOM/script path, but do
+    // not start WebRender's native scene-builder or render-backend loops here.
+    // A cooperative renderer pump will be added before screenshots are enabled.
+    #[cfg(target_arch = "wasm32")]
+    let _ = (
+        api_rx,
+        result_tx,
+        scene_builder_channels,
+        rb_scene_tx,
+        rb_fonts,
+        enable_multithreading,
+        scene_thread_name,
+        lp_scene_thread_name,
+        rb_thread_name,
+    );
 
     let debug_method = if !options.enable_gpu_markers {
         // The GPU markers are disabled.
