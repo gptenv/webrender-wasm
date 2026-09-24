@@ -1965,6 +1965,16 @@ impl YuvFormat {
 pub struct ImageMask {
     pub image: ImageKey,
     pub rect: LayoutRect,
+    /// Servo/servo-wasm extension for CSS `mask-image`: the size of one tile
+    /// of `image` within `rect`. Equal to `rect.size()` for a mask that does
+    /// not repeat; smaller than it when `mask-repeat` tiles the image across
+    /// `rect`. Zero (the `Default` value) is treated as `rect.size()`.
+    pub tile_size: LayoutSize,
+    /// Servo/servo-wasm extension for CSS `mask-mode: luminance`: use the
+    /// mask image's luminance (rather than its alpha channel) as the mask.
+    /// `false` (the `Default` value) matches upstream WebRender's only
+    /// previously supported behavior (alpha).
+    pub luminance: bool,
 }
 
 impl ImageMask {

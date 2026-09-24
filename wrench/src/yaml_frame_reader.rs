@@ -829,6 +829,8 @@ impl YamlFrameReader {
         Some(ImageMask {
             image: image_key,
             rect: image_rect,
+            tile_size: image_rect.size(),
+            luminance: false,
         })
     }
 
