@@ -614,6 +614,7 @@ impl BuiltDisplayList {
                 Real::RectClip(v) => Debug::RectClip(v),
                 Real::RoundedRectClip(v) => Debug::RoundedRectClip(v),
                 Real::ImageMaskClip(v) => Debug::ImageMaskClip(v),
+                Real::PolygonClip(v) => Debug::PolygonClip(v),
                 Real::Rectangle(v) => Debug::Rectangle(v),
                 Real::HitTest(v) => Debug::HitTest(v),
                 Real::Line(v) => Debug::Line(v),
@@ -1738,6 +1739,28 @@ impl DisplayListBuilder {
         // minimum to specify a polygon. BuiltDisplayListIter.next ensures that points
         // are cleared between processing other display items, so we'll correctly get
         // zero points when no SetPoints item has been pushed.
+        if points.len() >= 3 {
+            self.push_item(&di::DisplayItem::SetPoints);
+            self.push_iter(points);
+        }
+        self.push_item(&item);
+        id
+    }
+
+    /// Define a `clip-path: polygon()` clip. The vertices are supplied as
+    /// implicit `SetPoints` data, like `define_clip_image_mask`, so the item
+    /// itself stays `Copy`.
+    pub fn define_clip_polygon(
+        &mut self,
+        spatial_id: di::SpatialId,
+        points: &[LayoutPoint],
+    ) -> di::ClipId {
+        let id = self.generate_clip_index();
+
+        let item = di::DisplayItem::PolygonClip(di::PolygonClipDisplayItem { id, spatial_id });
+
+        // A polygon needs at least 3 vertices; fewer is degenerate and the
+        // item is still pushed so clip ids stay aligned, but carries no points.
         if points.len() >= 3 {
             self.push_item(&di::DisplayItem::SetPoints);
             self.push_iter(points);
