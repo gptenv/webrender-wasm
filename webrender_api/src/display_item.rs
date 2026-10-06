@@ -158,6 +158,7 @@ pub enum DisplayItem {
     RectClip(RectClipDisplayItem),
     RoundedRectClip(RoundedRectClipDisplayItem),
     ImageMaskClip(ImageMaskClipDisplayItem),
+    PolygonClip(PolygonClipDisplayItem),
     ClipChain(ClipChainItem),
 
     // Spaces and Frames that content can be scoped under.
@@ -203,6 +204,7 @@ pub enum DebugDisplayItem {
     BackdropFilter(BackdropFilterDisplayItem),
 
     ImageMaskClip(ImageMaskClipDisplayItem),
+    PolygonClip(PolygonClipDisplayItem),
     RoundedRectClip(RoundedRectClipDisplayItem),
     RectClip(RectClipDisplayItem),
     ClipChain(ClipChainItem, Vec<ClipId>),
@@ -229,6 +231,14 @@ pub struct ImageMaskClipDisplayItem {
     pub spatial_id: SpatialId,
     pub image_mask: ImageMask,
     pub fill_rule: FillRule,
+} // IMPLICIT points: Vec<LayoutPoint>
+
+/// A `clip-path: polygon()` clip. The vertices travel as implicit `SetPoints`
+/// data, like `ImageMaskClipDisplayItem`, so the struct stays `Copy`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub struct PolygonClipDisplayItem {
+    pub id: ClipId,
+    pub spatial_id: SpatialId,
 } // IMPLICIT points: Vec<LayoutPoint>
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
