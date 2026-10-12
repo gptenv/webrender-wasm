@@ -179,6 +179,8 @@ pub enum DisplayItem {
 
     // For debugging purposes.
     DebugMarker(u32),
+    // Worker-only polygon clip; appended to preserve existing display-item tags.
+    PolygonClip(PolygonClipDisplayItem),
 }
 
 /// This is a "complete" version of the DisplayItem, with all implicit trailing
@@ -220,7 +222,8 @@ pub enum DebugDisplayItem {
     PopStackingContext,
     PopAllShadows,
 
-    DebugMarker(u32)
+    DebugMarker(u32),
+    PolygonClip(PolygonClipDisplayItem, Vec<LayoutPoint>),
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
@@ -229,6 +232,12 @@ pub struct ImageMaskClipDisplayItem {
     pub spatial_id: SpatialId,
     pub image_mask: ImageMask,
     pub fill_rule: FillRule,
+} // IMPLICIT points: Vec<LayoutPoint>
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub struct PolygonClipDisplayItem {
+    pub id: ClipId,
+    pub spatial_id: SpatialId,
 } // IMPLICIT points: Vec<LayoutPoint>
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
@@ -2274,6 +2283,7 @@ impl DisplayItem {
             DisplayItem::RectClip(..) => "rect_clip",
             DisplayItem::RoundedRectClip(..) => "rounded_rect_clip",
             DisplayItem::ImageMaskClip(..) => "image_mask_clip",
+            DisplayItem::PolygonClip(..) => "polygon_clip",
             DisplayItem::ClipChain(..) => "clip_chain",
             DisplayItem::ConicGradient(..) => "conic_gradient",
             DisplayItem::Gradient(..) => "gradient",

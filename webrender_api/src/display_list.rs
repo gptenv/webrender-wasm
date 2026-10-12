@@ -1746,6 +1746,23 @@ impl DisplayListBuilder {
         id
     }
 
+    /// Define a polygon clip for the Worker CPU renderer. Points are stored as
+    /// an implicit array following the marker, matching image-mask point data.
+    pub fn define_clip_polygon(
+        &mut self,
+        spatial_id: di::SpatialId,
+        points: &[LayoutPoint],
+    ) -> di::ClipId {
+        let id = self.generate_clip_index();
+        let item = di::DisplayItem::PolygonClip(di::PolygonClipDisplayItem { id, spatial_id });
+        if points.len() >= 3 {
+            self.push_item(&di::DisplayItem::SetPoints);
+            self.push_iter(points);
+        }
+        self.push_item(&item);
+        id
+    }
+
     pub fn define_clip_rect(
         &mut self,
         spatial_id: di::SpatialId,
