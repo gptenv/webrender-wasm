@@ -1831,6 +1831,9 @@ impl<'a> SceneBuilder<'a> {
                     item.gradient_stops(),
                 );
             }
+            // Polygon clips are consumed by Servo's Worker CPU renderer; the
+            // native WebRender scene builder intentionally ignores this Worker-only item.
+            DisplayItem::PolygonClip(_) => {},
             DisplayItem::ImageMaskClip(ref info) => {
                 profile_scope!("image_clip");
 
